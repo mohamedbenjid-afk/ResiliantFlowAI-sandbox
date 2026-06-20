@@ -66,24 +66,14 @@ c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_pct = update_sensors()
 STATUS_COLOR = {"Nominal": "#166534", "Alerte": "#b45309", "Critique": "#b91c1c"}
 STATUS_BG    = {"Nominal": "#dcfce7", "Alerte": "#fef3c7", "Critique": "#fee2e2"}
 
-# ── TABS — K2 visible uniquement si intervention requise ─────────────────────
-_show_k2 = r_status in ("Alerte", "Critique")
-_tab_labels = ["📡 K0 — Surveillance", "📋 K1 — Briefing"]
-if _show_k2:
-    _tab_labels.append("📘 K2 — Procédure 🔔")
-_tab_labels += ["📝 K3 — Post-intervention", "⚖️ K4 — Arbitrage"]
-
-_tabs = st.tabs(_tab_labels)
+# ── TABS — Sandbox : K0 uniquement (K1-K4 masqués) ──────────────────────────
+_show_k2 = False
+_tabs = st.tabs(["📡 K0 — Surveillance"])
 tab0 = _tabs[0]
-tab1 = _tabs[1]
-if _show_k2:
-    tab2 = _tabs[2]
-    tab3 = _tabs[3]
-    tab4 = _tabs[4]
-else:
-    tab2 = None
-    tab3 = _tabs[2]
-    tab4 = _tabs[3]
+tab1 = None
+tab2 = None
+tab3 = None
+tab4 = None
 
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 0 — K0 SURVEILLANCE
