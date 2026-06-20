@@ -1,0 +1,14 @@
+# Secrets — ne jamais committer
+.streamlit/secrets.toml
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
