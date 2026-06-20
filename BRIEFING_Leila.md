@@ -56,24 +56,24 @@ c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_pct = update_sensors()
 
 ---
 
-## Bases Notion ESCP — IDs CORRECTS
+## Bases Notion SANDBOX — IDs à utiliser
 
 ```python
 DB_IDS = {
-    "machines":   "6653da63-bd5a-4191-815c-576b8c7fcfbc",
-    "equipe":     "3856b2ff-be3d-8151-8b3f-ee79dee0bc2b",
-    "pieces":     "ef896795-bd1a-4b20-a8ea-f121c9f846ff",
-    "ordres_fab": "687e40c2-a3ff-4de0-be55-20cf411f5dd6",
-    "historique": "94babab5-03bb-4c4d-9053-08d5bff301e3",
-    "hse_docs":   "3856b2ff-be3d-816f-a163-ef4f8e43499d",
+    "machines":   "bd46b2ff-be3d-82fc-b84d-01ff9ab0755a",   # 🏭 [SANDBOX] Équipements
+    "equipe":     "3fc6b2ff-be3d-83ee-af1e-01c20e1916be",   # 👷 [SANDBOX] Équipe Maintenance RH
+    "pieces":     "b046b2ff-be3d-8216-81f1-810677ff6573",   # 📦 [SANDBOX] Stock Composants
+    "ordres_fab": "7f16b2ff-be3d-83d1-8b97-01bed26855a3",   # 📋 [SANDBOX] Ordres de Fabrication
+    "historique": "7916b2ff-be3d-83ae-b000-01a13f5ca17a",   # 🔩 [SANDBOX] Plan de Maintenance
+    "hse_docs":   "7b06b2ff-be3d-8370-a7cf-812ff9b00d76",   # 📚 [SANDBOX] Documentation & HSE
 }
 ```
 
 > ⚠️ Le fichier `agents/agent_leila.py` actuel utilise des IDs **INCORRECTS** :
-> - `DB_HISTORIQUE = "6f53558b..."` → doit être `"94babab5-03bb-4c4d-9053-08d5bff301e3"`
-> - `DB_PIECES     = "c22138ba..."` → doit être `"ef896795-bd1a-4b20-a8ea-f121c9f846ff"`
-> - `DB_HSE        = "b6ab3a9b..."` → doit être `"3856b2ff-be3d-816f-a163-ef4f8e43499d"`
-> - `DB_EQUIPE     = "0a82b4f5..."` → doit être `"3856b2ff-be3d-8151-8b3f-ee79dee0bc2b"`
+> - `DB_HISTORIQUE = "6f53558b..."` → doit être `"7916b2ff-be3d-83ae-b000-01a13f5ca17a"`
+> - `DB_PIECES     = "c22138ba..."` → doit être `"b046b2ff-be3d-8216-81f1-810677ff6573"`
+> - `DB_HSE        = "b6ab3a9b..."` → doit être `"7b06b2ff-be3d-8370-a7cf-812ff9b00d76"`
+> - `DB_EQUIPE     = "0a82b4f5..."` → doit être `"3fc6b2ff-be3d-83ee-af1e-01c20e1916be"`
 
 ---
 
@@ -257,10 +257,10 @@ DB_HSE        = "b6ab3a9bd41d4967add92f27d1cd2d5c"   # ❌ ERRONÉ
 DB_EQUIPE     = "0a82b4f53a26491c81e64b0cb8bb058c"   # ❌ ERRONÉ
 
 # PAR :
-DB_HISTORIQUE = "94babab5-03bb-4c4d-9053-08d5bff301e3"
-DB_PIECES     = "ef896795-bd1a-4b20-a8ea-f121c9f846ff"
-DB_HSE        = "3856b2ff-be3d-816f-a163-ef4f8e43499d"
-DB_EQUIPE     = "3856b2ff-be3d-8151-8b3f-ee79dee0bc2b"
+DB_HISTORIQUE = "7916b2ff-be3d-83ae-b000-01a13f5ca17a"
+DB_PIECES     = "b046b2ff-be3d-8216-81f1-810677ff6573"
+DB_HSE        = "7b06b2ff-be3d-8370-a7cf-812ff9b00d76"
+DB_EQUIPE     = "3fc6b2ff-be3d-83ee-af1e-01c20e1916be"
 ```
 
 ### Priorité 2 — Fonction `get_exigences_hse_intervention`
