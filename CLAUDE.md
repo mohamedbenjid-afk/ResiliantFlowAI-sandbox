@@ -22,6 +22,20 @@ Chaque membre dispose d'un fichier de briefing **à coller en début de session 
 
 ---
 
+## ⚠️ RÈGLES SANDBOX — À LIRE AVANT TOUTE ACTION
+
+> Cet environnement est **réservé aux membres de l'équipe** (Sihem, Philippe, Murielle) pour développer et tester leurs agents sans risquer de casser la production.
+
+| Règle | Détail |
+|---|---|
+| **Repo** | Travailler sur `ResiliantFlowAI-sandbox` uniquement — jamais sur `ResiliantFlowAI` |
+| **Bases Notion** | Utiliser uniquement les bases préfixées `[SANDBOX]` |
+| **Nouvelle base Notion** | Préfixe `[SANDBOX] ` obligatoire + signaler à Mohamed |
+| **Déploiement** | App Streamlit sandbox uniquement |
+| **Fusion vers prod** | Uniquement via Mohamed après validation |
+
+---
+
 ## 1. Présentation du projet
 
 **ResilientFlow AI** est un démonstrateur de maintenance prescriptive Industrie 4.0,

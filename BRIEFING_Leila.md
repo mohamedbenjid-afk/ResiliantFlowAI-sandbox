@@ -3,15 +3,28 @@
 
 ---
 
+## ⚠️ RÈGLES DE TRAVAIL — ENVIRONNEMENT SANDBOX
+
+> **Tu travailles UNIQUEMENT dans l'environnement sandbox.** Aucune modification sur le repo de production ni sur les bases Notion de production.
+
+| Règle | Détail |
+|---|---|
+| **Repo GitHub** | Travailler exclusivement sur `mohamedbenjid-afk/ResiliantFlowAI-sandbox` — branche `develop` |
+| **Bases Notion** | Utiliser uniquement les bases préfixées `[SANDBOX]` — ne jamais toucher aux bases sans préfixe |
+| **Création de base** | Toute nouvelle base Notion **doit** commencer par `[SANDBOX] ` (ex : `[SANDBOX] Ma Nouvelle Base`) |
+| **Déploiement** | Tester sur l'app Streamlit sandbox uniquement — ne jamais déployer sur l'app de production |
+| **Accord requis** | Toute création de base Notion doit être signalée à Mohamed avant ou après création |
+
+---
+
 ## Contexte projet
 
 **ResilientFlow AI** — démonstrateur de maintenance prescriptive Industrie 4.0 (projet fin d'études ESCP).
 Stack : Python · Streamlit · Notion API · LLM via 1min.ai.
 Machine surveillée : **Pompe P-17, Unité B**.
 
-Repo GitHub : `mohamedbenjid-afk/ResiliantFlowAI` (branche `develop`).
+Repo GitHub (sandbox) : `mohamedbenjid-afk/ResiliantFlowAI-sandbox` (branche `develop`).
 
-Les fichiers à modifier sont dans `/Users/macdemohamed/Documents/Claude/Projects/ResilientFlow AI/`.
 **Ne touche jamais** : `shared_state.py`, `notion_client.py`, `llm_client.py`, `streamlit_app.py`, `streamlit_home.py`.
 
 ---
