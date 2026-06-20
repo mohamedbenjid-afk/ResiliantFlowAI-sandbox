@@ -16,7 +16,9 @@ Chaque membre dispose d'un fichier de briefing **à coller en début de session 
 | **Philippe** | Antoine — Directeur Technique | `BRIEFING_Antoine.md` |
 | **Murielle** | Leila — Responsable HSE | `BRIEFING_Leila.md` |
 
-> ⚠️ **Priorité absolue commune :** Les agents `agent_sophie.py`, `agent_antoine.py` et `agent_leila.py` utilisent tous des **IDs Notion incorrects** (ancienne base). Les briefings donnent les IDs ESCP corrects. Corriger les IDs en premier — aucun appel Notion ne fonctionne sinon.
+> ✅ **Environnement SANDBOX** — Ce repo est l'environnement de test pour les membres de l'équipe. Les IDs Notion dans `notion_client.py` pointent déjà vers les bases [SANDBOX]. Ne pas modifier ces IDs. Pour travailler, colle le contenu de ton fichier BRIEFING en début de session Claude.
+
+> ⚠️ **Token Notion requis** : copier `secrets.toml.example` en `.streamlit/secrets.toml` et renseigner le `NOTION_TOKEN` (demander à Mohamed).
 
 ---
 
@@ -27,7 +29,8 @@ développé dans le cadre d'un projet de fin d'études ESCP.
 
 - **Machine surveillée :** Pompe P-17, Unité B
 - **Stack :** Python · Streamlit · Notion API · LLM via 1min.ai
-- **Repo GitHub :** `mohamedbenjid-afk/ResiliantFlowAI` (branche de travail : `develop`)
+- **Repo GitHub :** `mohamedbenjid-afk/ResiliantFlowAI-sandbox` (branche de travail : `develop`)
+- **Repo prod :** `mohamedbenjid-afk/ResiliantFlowAI` (ne pas toucher)
 - **App déployée :** Streamlit Cloud
 
 ### Ce que fait l'app

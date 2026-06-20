@@ -13,12 +13,12 @@ NOTION_BASE_URL = "https://api.notion.com/v1"
 
 # IDs des 6 bases de données Notion (compte ESCP)
 DB_IDS = {
-    "machines":   "6653da63-bd5a-4191-815c-576b8c7fcfbc",   # 🏭 Équipements
-    "equipe":     "3856b2ff-be3d-8151-8b3f-ee79dee0bc2b",   # 👷 Équipe Maintenance RH
-    "pieces":     "ef896795-bd1a-4b20-a8ea-f121c9f846ff",   # 📦 Stock Composants
-    "ordres_fab": "687e40c2-a3ff-4de0-be55-20cf411f5dd6",   # 📋 Ordres de Fabrication
-    "historique": "94babab5-03bb-4c4d-9053-08d5bff301e3",   # 🔩 Plan de Maintenance
-    "hse_docs":   "3856b2ff-be3d-816f-a163-ef4f8e43499d",   # 📚 Documentation & HSE
+    "machines":   "bd46b2ff-be3d-82fc-b84d-01ff9ab0755a",   # 🏭 [SANDBOX] Équipements
+    "equipe":     "3fc6b2ff-be3d-83ee-af1e-01c20e1916be",   # 👷 [SANDBOX] Équipe Maintenance RH
+    "pieces":     "b046b2ff-be3d-8216-81f1-810677ff6573",   # 📦 [SANDBOX] Stock Composants
+    "ordres_fab": "7f16b2ff-be3d-83d1-8b97-01bed26855a3",   # 📋 [SANDBOX] Ordres de Fabrication
+    "historique": "7916b2ff-be3d-83ae-b000-01a13f5ca17a",   # 🔩 [SANDBOX] Plan de Maintenance
+    "hse_docs":   "7b06b2ff-be3d-8370-a7cf-812ff9b00d76",   # 📚 [SANDBOX] Documentation & HSE
 }
 
 
