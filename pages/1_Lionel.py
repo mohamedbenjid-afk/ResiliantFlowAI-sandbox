@@ -200,7 +200,8 @@ with tab0:
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 1 — K1 BRIEFING
 # ════════════════════════════════════════════════════════════════════════════════
-with tab1:
+if tab1 is not None:
+  with tab1:
     st.markdown("## 📋 Briefing du quart")
 
     # Machines en alerte
@@ -569,7 +570,8 @@ if tab2 is not None:
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 3 — K3 POST-INTERVENTION
 # ════════════════════════════════════════════════════════════════════════════════
-with tab3:
+if tab3 is not None:
+  with tab3:
     st.markdown("## 📝 Rapport post-intervention")
 
     if st.session_state.get("k3_submitted"):
@@ -681,7 +683,8 @@ with tab3:
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 4 — K4 ARBITRAGE
 # ════════════════════════════════════════════════════════════════════════════════
-with tab4:
+if tab4 is not None:
+  with tab4:
     st.markdown("## ⚖️ Arbitrage multi-machine")
     st.caption("Aide à la décision : quelle machine traiter en priorité ?")
 
