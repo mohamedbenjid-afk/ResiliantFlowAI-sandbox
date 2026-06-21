@@ -51,11 +51,11 @@ def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None)
     return results
 
 
-# ── IDs des bases Notion ResilientFlow ───────────────────────────────────────
-DB_ORDRES_FAB = "d7ee45dab07943c1bda09a6b47089202"   # Ordres de fabrication
-DB_HISTORIQUE = "6f53558bfbee455891efa53b6536d892"   # Historique & plan de maintenance
-DB_PIECES     = "c22138baa8ca4806b19403108735bc68"   # Pièces détachées
-DB_EQUIPE     = "0a82b4f53a26491c81e64b0cb8bb058c"   # Équipe maintenance
+# ── IDs des bases Notion ESCP (corrects) ─────────────────────────────────────
+DB_ORDRES_FAB = "687e40c2-a3ff-4de0-be55-20cf411f5dd6"   # Ordres de fabrication
+DB_HISTORIQUE = "94babab5-03bb-4c4d-9053-08d5bff301e3"   # Historique & plan de maintenance
+DB_PIECES     = "ef896795-bd1a-4b20-a8ea-f121c9f846ff"   # Pièces détachées
+DB_EQUIPE     = "3856b2ff-be3d-8151-8b3f-ee79dee0bc2b"   # Équipe maintenance
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -79,24 +79,23 @@ def get_impact_production(equipement: str) -> dict:
     """OF en cours et planifiés sur cet équipement avec coût d'arrêt."""
     res = _notion_query(
         DB_ORDRES_FAB,
-        filter_obj={"property": "Machine impactée", "rich_text": {"contains": equipement}},
+        filter_obj={"property": "Équipement concerné", "rich_text": {"contains": equipement}},
         sorts=[{"property": "Priorité", "direction": "ascending"}]
     )
     of_en_cours, of_planifies = [], []
     for page in res:
         p = _p(page)
-        statut = _text(p.get("Statut OF"))
+        statut = _text(p.get("Statut"))
         entry = {
-            "reference":       _text(p.get("Référence OF")),
+            "reference":       _text(p.get("Ordre de Fabrication")),
             "statut":          statut,
-            "produit":         _text(p.get("Produit")),
+            "produit":         _text(p.get("Produit fabriqué")),
             "ligne":           _text(p.get("Ligne de production")),
-            "qte_prevue":      _text(p.get("Quantité prévue")),
+            "qte_prevue":      _text(p.get("Quantité cible")),
             "qte_realisee":    _text(p.get("Quantité réalisée")),
-            "cout_arret_eur":  _text(p.get("Coût arrêt (€)")),
-            "duree_arret_h":   _text(p.get("Durée arrêt (h)")),
+            "cout_arret_eur":  _text(p.get("Coût arrêt horaire (€)")),
             "date_fin_prevue": _text(p.get("Date fin prévue")),
-            "responsable":     _text(p.get("Responsable production")),
+            "responsable":     _text(p.get("Responsable OF")),
             "impact_rul":      _text(p.get("Impact RUL")),
         }
         if statut == "En cours":
@@ -137,20 +136,19 @@ def get_fenetre_maintenance(equipement: str) -> list:
     res = _notion_query(
         DB_HISTORIQUE,
         filter_obj={"and": [
-            {"property": "Machine", "rich_text": {"contains": equipement}},
-            {"property": "Statut",  "select":    {"equals": "Planifiée"}},
+            {"property": "Équipement",  "rich_text": {"contains": equipement}},
+            {"property": "Statut",      "select":    {"equals": "Planifiée"}},
         ]},
-        sorts=[{"property": "Date intervention", "direction": "ascending"}]
+        sorts=[{"property": "Date planifiée", "direction": "ascending"}]
     )
     return [
         {
-            "titre":          _text(_p(p).get("Titre intervention")),
-            "type":           _text(_p(p).get("Type")),
-            "date":           _text(_p(p).get("Date intervention")),
-            "prochaine_echeance": _text(_p(p).get("Prochaine échéance")),
-            "duree_estimee_h":_text(_p(p).get("Durée estimée (h)")),
-            "technicien":     _text(_p(p).get("Technicien assigné")),
-            "cout_eur":       _text(_p(p).get("Coût intervention (€)")),
+            "titre":             _text(_p(p).get("Intervention")),
+            "type":              _text(_p(p).get("Type d'intervention")),
+            "date":              _text(_p(p).get("Date planifiée")),
+            "duree_estimee_h":   _text(_p(p).get("Durée estimée (h)")),
+            "technicien":        _text(_p(p).get("Technicien assigné")),
+            "cout_eur":          _text(_p(p).get("Coût estimé (€)")),
         }
         for p in res
     ] or [{"info": "Aucune intervention planifiée — fenêtre à créer"}]
@@ -161,19 +159,19 @@ def get_pieces_critiques_manquantes(equipement: str) -> list:
     res = _notion_query(
         DB_PIECES,
         filter_obj={"and": [
-            {"property": "Machine concernée", "rich_text": {"contains": equipement}},
-            {"property": "Statut stock",      "select":    {"does_not_equal": "En stock"}},
+            {"property": "Équipements compatibles", "rich_text": {"contains": equipement}},
+            {"property": "Statut stock",            "select":    {"does_not_equal": "En stock"}},
         ]}
     )
     return [
         {
-            "designation":     _text(_p(p).get("Désignation pièce")),
-            "reference":       _text(_p(p).get("Référence")),
+            "designation":     _text(_p(p).get("Composant")),
+            "reference":       _text(_p(p).get("Réf. fabricant")),
             "statut_stock":    _text(_p(p).get("Statut stock")),
             "stock_actuel":    _text(_p(p).get("Stock actuel")),
-            "stock_minimum":   _text(_p(p).get("Stock minimum")),
-            "delai_livraison": _text(_p(p).get("Délai livraison (j)")),
-            "fournisseur":     _text(_p(p).get("Fournisseur")),
+            "stock_minimum":   _text(_p(p).get("Stock minimum (seuil alerte)")),
+            "delai_livraison": _text(_p(p).get("Délai réappro (jours)")),
+            "fournisseur":     _text(_p(p).get("Fournisseur principal")),
             "notes":           _text(_p(p).get("Notes")),
         }
         for p in res
