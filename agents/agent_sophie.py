@@ -1,29 +1,30 @@
+
 """
 agents/agent_sophie.py — Agent d'arbitrage de Sophie (Manager Maintenance)
 Rôle : évaluer l'impact production d'une alerte, arbitrer entre intervention
        immédiate et report, optimiser l'assignation des techniciens.
-
+ 
 Intégration dans pages/2_Sophie.py :
     from agents.agent_sophie import run_agent_sophie
     arbitrage = run_agent_sophie(c_rul, equipement="Pompe P-17")
 """
-
+ 
 import os, json
 import requests as _requests
-
+ 
 import sys, os as _os
 sys.path.append(_os.path.join(_os.path.dirname(__file__), '..'))
 from llm_client import chat as _llm_chat
-
-
+ 
+ 
 def _get_secret(key):
     try:
         import streamlit as st
         return st.secrets[key]
     except Exception:
         return os.environ.get(key, "")
-
-
+ 
+ 
 # ── CLIENT NOTION via requests ────────────────────────────────────────────────
 def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None) -> list:
     token = _get_secret("NOTION_TOKEN")
@@ -36,7 +37,7 @@ def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None)
     payload = {}
     if filter_obj: payload["filter"] = filter_obj
     if sorts:      payload["sorts"]  = sorts
-
+ 
     results, has_more, cursor = [], True, None
     while has_more:
         if cursor:
@@ -49,15 +50,15 @@ def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None)
         has_more = data.get("has_more", False)
         cursor   = data.get("next_cursor")
     return results
-
-
-# ── IDs des bases Notion ResilientFlow ───────────────────────────────────────
-DB_ORDRES_FAB = "d7ee45dab07943c1bda09a6b47089202"   # Ordres de fabrication
-DB_HISTORIQUE = "6f53558bfbee455891efa53b6536d892"   # Historique & plan de maintenance
-DB_PIECES     = "c22138baa8ca4806b19403108735bc68"   # Pièces détachées
-DB_EQUIPE     = "0a82b4f53a26491c81e64b0cb8bb058c"   # Équipe maintenance
-
-
+ 
+ 
+# ── IDs des bases Notion ESCP (corrigés) ─────────────────────────────────────
+DB_ORDRES_FAB = "687e40c2-a3ff-4de0-be55-20cf411f5dd6"   # Ordres de fabrication
+DB_HISTORIQUE = "94babab5-03bb-4c4d-9053-08d5bff301e3"   # Historique & plan de maintenance
+DB_PIECES     = "ef896795-bd1a-4b20-a8ea-f121c9f846ff"   # Pièces détachées
+DB_EQUIPE     = "3856b2ff-be3d-8151-8b3f-ee79dee0bc2b"   # Équipe maintenance
+ 
+ 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 def _text(prop):
     if not prop: return ""
@@ -69,49 +70,48 @@ def _text(prop):
     if t == "number":       v = prop.get("number"); return v if v is not None else ""
     if t == "date":         d = prop.get("date"); return d["start"] if d else ""
     return ""
-
+ 
 def _p(page): return page.get("properties", {})
-
-
+ 
+ 
 # ── OUTILS PLANIFICATION ──────────────────────────────────────────────────────
-
+ 
 def get_impact_production(equipement: str) -> dict:
     """OF en cours et planifiés sur cet équipement avec coût d'arrêt."""
     res = _notion_query(
         DB_ORDRES_FAB,
-        filter_obj={"property": "Machine impactée", "rich_text": {"contains": equipement}},
+        filter_obj={"property": "Équipement concerné", "rich_text": {"contains": equipement}},
         sorts=[{"property": "Priorité", "direction": "ascending"}]
     )
     of_en_cours, of_planifies = [], []
     for page in res:
         p = _p(page)
-        statut = _text(p.get("Statut OF"))
+        statut = _text(p.get("Statut"))
         entry = {
-            "reference":       _text(p.get("Référence OF")),
+            "reference":       _text(p.get("Ordre de Fabrication")),
             "statut":          statut,
-            "produit":         _text(p.get("Produit")),
+            "produit":         _text(p.get("Produit fabriqué")),
             "ligne":           _text(p.get("Ligne de production")),
-            "qte_prevue":      _text(p.get("Quantité prévue")),
+            "qte_prevue":      _text(p.get("Quantité cible")),
             "qte_realisee":    _text(p.get("Quantité réalisée")),
-            "cout_arret_eur":  _text(p.get("Coût arrêt (€)")),
-            "duree_arret_h":   _text(p.get("Durée arrêt (h)")),
+            "cout_arret_eur":  _text(p.get("Coût arrêt horaire (€)")),
             "date_fin_prevue": _text(p.get("Date fin prévue")),
-            "responsable":     _text(p.get("Responsable production")),
+            "responsable":     _text(p.get("Responsable OF")),
             "impact_rul":      _text(p.get("Impact RUL")),
         }
         if statut == "En cours":
             of_en_cours.append(entry)
         else:
             of_planifies.append(entry)
-
+ 
     return {
         "of_en_cours":  of_en_cours  or [{"info": "Aucun OF en cours sur cet équipement"}],
         "of_planifies": of_planifies or [{"info": "Aucun OF planifié"}],
         "total_of":     len(res),
         "cout_arret_total_eur": sum(float(o.get("cout_arret_eur") or 0) for o in of_en_cours),
     }
-
-
+ 
+ 
 def get_charge_techniciens(equipement: str) -> list:
     """Disponibilité et charge de travail de l'équipe maintenance."""
     res = _notion_query(DB_EQUIPE)
@@ -130,56 +130,55 @@ def get_charge_techniciens(equipement: str) -> list:
             "zone":             _text(p.get("Zone assignée")),
         })
     return equipe or [{"info": "Aucun technicien trouvé"}]
-
-
+ 
+ 
 def get_fenetre_maintenance(equipement: str) -> list:
     """Interventions planifiées sur cet équipement — pour trouver un créneau optimal."""
     res = _notion_query(
         DB_HISTORIQUE,
         filter_obj={"and": [
-            {"property": "Machine", "rich_text": {"contains": equipement}},
-            {"property": "Statut",  "select":    {"equals": "Planifiée"}},
+            {"property": "Équipement",  "rich_text": {"contains": equipement}},
+            {"property": "Statut",      "select":    {"equals": "Planifiée"}},
         ]},
-        sorts=[{"property": "Date intervention", "direction": "ascending"}]
+        sorts=[{"property": "Date planifiée", "direction": "ascending"}]
     )
     return [
         {
-            "titre":          _text(_p(p).get("Titre intervention")),
-            "type":           _text(_p(p).get("Type")),
-            "date":           _text(_p(p).get("Date intervention")),
-            "prochaine_echeance": _text(_p(p).get("Prochaine échéance")),
-            "duree_estimee_h":_text(_p(p).get("Durée estimée (h)")),
-            "technicien":     _text(_p(p).get("Technicien assigné")),
-            "cout_eur":       _text(_p(p).get("Coût intervention (€)")),
+            "titre":             _text(_p(p).get("Intervention")),
+            "type":              _text(_p(p).get("Type d'intervention")),
+            "date":              _text(_p(p).get("Date planifiée")),
+            "duree_estimee_h":   _text(_p(p).get("Durée estimée (h)")),
+            "technicien":        _text(_p(p).get("Technicien assigné")),
+            "cout_eur":          _text(_p(p).get("Coût estimé (€)")),
         }
         for p in res
     ] or [{"info": "Aucune intervention planifiée — fenêtre à créer"}]
-
-
+ 
+ 
 def get_pieces_critiques_manquantes(equipement: str) -> list:
     """Pièces en rupture ou stock bas pouvant bloquer une intervention immédiate."""
     res = _notion_query(
         DB_PIECES,
         filter_obj={"and": [
-            {"property": "Machine concernée", "rich_text": {"contains": equipement}},
-            {"property": "Statut stock",      "select":    {"does_not_equal": "En stock"}},
+            {"property": "Équipements compatibles", "rich_text": {"contains": equipement}},
+            {"property": "Statut stock",            "select":    {"does_not_equal": "En stock"}},
         ]}
     )
     return [
         {
-            "designation":     _text(_p(p).get("Désignation pièce")),
-            "reference":       _text(_p(p).get("Référence")),
+            "designation":     _text(_p(p).get("Composant")),
+            "reference":       _text(_p(p).get("Réf. fabricant")),
             "statut_stock":    _text(_p(p).get("Statut stock")),
             "stock_actuel":    _text(_p(p).get("Stock actuel")),
-            "stock_minimum":   _text(_p(p).get("Stock minimum")),
-            "delai_livraison": _text(_p(p).get("Délai livraison (j)")),
-            "fournisseur":     _text(_p(p).get("Fournisseur")),
+            "stock_minimum":   _text(_p(p).get("Stock minimum (seuil alerte)")),
+            "delai_livraison": _text(_p(p).get("Délai réappro (jours)")),
+            "fournisseur":     _text(_p(p).get("Fournisseur principal")),
             "notes":           _text(_p(p).get("Notes")),
         }
         for p in res
     ] or [{"info": "Aucune pièce critique manquante — stock OK pour intervention"}]
-
-
+ 
+ 
 # ── OUTILS DÉCLARÉS À L'AGENT ─────────────────────────────────────────────────
 TOOLS = [
     {
@@ -203,37 +202,37 @@ TOOLS = [
         "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
     }
 ]
-
-
+ 
+ 
 def _execute(name, inputs):
     if name == "get_impact_production":           return get_impact_production(inputs["equipement"])
     if name == "get_charge_techniciens":          return get_charge_techniciens(inputs["equipement"])
     if name == "get_fenetre_maintenance":         return get_fenetre_maintenance(inputs["equipement"])
     if name == "get_pieces_critiques_manquantes": return get_pieces_critiques_manquantes(inputs["equipement"])
     return {"erreur": f"Outil inconnu : {name}"}
-
-
+ 
+ 
 # ── PROMPT SYSTÈME ────────────────────────────────────────────────────────────
 SYSTEM = """Tu es l'assistant de Sophie, Manager Maintenance de l'Unité B.
 Tu analyses les alertes machine pour l'aider à prendre des décisions de planification.
-
+ 
 Ton rôle : arbitrer entre intervention immédiate et report, en tenant compte de :
 - L'impact sur la production en cours (OF actifs, coût d'arrêt)
 - La disponibilité des techniciens et leur charge
 - La disponibilité des pièces nécessaires
 - Les fenêtres de maintenance déjà planifiées
-
+ 
 Format de réponse attendu :
 1. **Situation** : résumé de l'alerte et des contraintes identifiées
 2. **Option A — Intervention immédiate** : avantages, risques, coût estimé
 3. **Option B — Report planifié** : date suggérée, conditions requises, risque RUL
 4. **Recommandation** : quelle option privilégier et pourquoi
 5. **Actions à lancer maintenant** : liste concrète (contacter Lionel, commander pièce, etc.)
-
+ 
 Sois factuel. Chiffre les risques financiers quand tu le peux.
 """
-
-
+ 
+ 
 # ── FONCTION PRINCIPALE ───────────────────────────────────────────────────────
 def run_agent_sophie(c_rul: int, equipement: str = "Pompe P-17",
                      c_temp: float = None, c_vib: float = None) -> str:
@@ -244,14 +243,14 @@ def run_agent_sophie(c_rul: int, equipement: str = "Pompe P-17",
     details = ""
     if c_temp: details += f"\n- Température : {c_temp:.1f}°C"
     if c_vib:  details += f"\n- Vibration   : {c_vib:.2f} mm/s"
-
+ 
     situation = (
         f"ALERTE MAINTENANCE — {equipement}\n"
         f"- RUL estimé : {c_rul}h{details}\n\n"
         f"Analyse l'impact production, la disponibilité des ressources "
         f"et recommande la meilleure stratégie d'intervention."
     )
-
+ 
     messages = [{"role": "user", "content": situation}]
     while True:
         resp = _llm_chat(system=SYSTEM, messages=messages, tools=TOOLS, max_tokens=2000)
@@ -265,8 +264,8 @@ def run_agent_sophie(c_rul: int, equipement: str = "Pompe P-17",
                                 "content": json.dumps(out, ensure_ascii=False)})
             messages.append({"role": "assistant", "content": resp.content})
             messages.append({"role": "user",      "content": results})
-
-
+ 
+ 
 # ── TEST STANDALONE ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print(run_agent_sophie(c_rul=18, equipement="Pompe P-17", c_temp=78.0, c_vib=5.8))
