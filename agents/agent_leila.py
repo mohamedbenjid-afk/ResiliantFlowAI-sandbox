@@ -53,10 +53,10 @@ def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None)
 
 
 # ── IDs des bases Notion ResilientFlow ───────────────────────────────────────
-DB_HISTORIQUE = "6f53558bfbee455891efa53b6536d892"   # Historique & plan de maintenance
-DB_PIECES     = "c22138baa8ca4806b19403108735bc68"   # Pièces détachées
-DB_HSE        = "b6ab3a9bd41d4967add92f27d1cd2d5c"   # Documentation & HSE
-DB_EQUIPE     = "0a82b4f53a26491c81e64b0cb8bb058c"   # Équipe maintenance (habilitations)
+DB_HISTORIQUE = "94babab5-03bb-4c4d-9053-08d5bff301e3"   # Historique & plan de maintenance
+DB_PIECES     = "ef896795-bd1a-4b20-a8ea-f121c9f846ff"   # Pièces détachées
+DB_HSE        = "3856b2ff-be3d-816f-a163-ef4f8e43499d"   # Documentation & HSE
+DB_EQUIPE     = "3856b2ff-be3d-8151-8b3f-ee79dee0bc2b"   # Équipe maintenance (habilitations)
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -136,15 +136,15 @@ def get_exigences_hse_intervention(equipement: str) -> dict:
     interv_res = _notion_query(
         DB_HISTORIQUE,
         filter_obj={"and": [
-            {"property": "Machine", "rich_text": {"contains": equipement}},
-            {"property": "Statut",  "select":    {"equals": "Planifiée"}},
+            {"property": "Équipement", "rich_text": {"contains": equipement}},
+            {"property": "Statut",     "select":    {"equals": "Planifiée"}},
         ]},
-        sorts=[{"property": "Date intervention", "direction": "ascending"}]
+        sorts=[{"property": "Date planifiée", "direction": "ascending"}]
     )
     interventions = [{
-        "titre":     _text(_p(p).get("Titre intervention")),
-        "type":      _text(_p(p).get("Type")),
-        "date":      _text(_p(p).get("Date intervention")),
+        "titre":     _text(_p(p).get("Intervention")),
+        "type":      _text(_p(p).get("Type d'intervention")),
+        "date":      _text(_p(p).get("Date planifiée")),
         "technicien":_text(_p(p).get("Technicien assigné")),
         "duree_h":   _text(_p(p).get("Durée estimée (h)")),
     } for p in interv_res]
@@ -226,15 +226,15 @@ def get_conformite_pieces(equipement: str) -> dict:
     """Vérifie la traçabilité réglementaire des pièces (référence + fournisseur)."""
     res = _notion_query(
         DB_PIECES,
-        filter_obj={"property": "Machine concernée", "rich_text": {"contains": equipement}}
+        filter_obj={"property": "Équipements compatibles", "rich_text": {"contains": equipement}}
     )
     conformes, non_conformes = [], []
     for page in res:
         p     = _p(page)
-        ref   = _text(p.get("Référence"))
-        fourn = _text(p.get("Fournisseur"))
+        ref   = _text(p.get("Réf. fabricant"))
+        fourn = _text(p.get("Fournisseur principal"))
         entry = {
-            "designation": _text(p.get("Désignation pièce")),
+            "designation": _text(p.get("Composant")),
             "reference":   ref,
             "fournisseur": fourn,
             "statut_stock":_text(p.get("Statut stock")),
