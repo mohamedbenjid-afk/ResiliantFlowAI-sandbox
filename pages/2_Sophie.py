@@ -294,10 +294,16 @@ with tab2:
         dispo         = tech.get("disponibilite", "Congé")
         heures        = tech.get("heures_restantes") or 0
         specialite    = tech.get("specialite", "—")
-        habilitations = tech.get("habilitations") or ""
-        zone          = tech.get("zone", "—")
+        habilitations_raw = tech.get("habilitations") or ""
+        zone              = tech.get("zone", "—")
 
-        habs_tech  = [h.strip() for h in habilitations.split(",") if h.strip()]
+        # notion_client peut retourner une liste (multi_select) ou une chaîne
+        if isinstance(habilitations_raw, list):
+            habs_tech     = [str(h).strip() for h in habilitations_raw if str(h).strip()]
+            habilitations = ", ".join(habs_tech)
+        else:
+            habilitations = str(habilitations_raw) if habilitations_raw else ""
+            habs_tech     = [h.strip() for h in habilitations.split(",") if h.strip()]
         manquantes = [h for h in hab_requises if h not in habs_tech]
 
         if dispo == "Disponible":
