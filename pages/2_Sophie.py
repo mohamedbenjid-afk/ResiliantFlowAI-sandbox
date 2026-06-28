@@ -294,10 +294,10 @@ with tab2:
         dispo         = tech.get("disponibilite", "Congé")
         heures        = tech.get("heures_restantes") or 0
         specialite    = tech.get("specialite", "—")
-        habilitations = tech.get("habilitations", "")
+        habilitations = tech.get("habilitations") or ""
         zone          = tech.get("zone", "—")
 
-        habs_tech  = [h.strip() for h in habilitations.split(",")]
+        habs_tech  = [h.strip() for h in habilitations.split(",") if h.strip()]
         manquantes = [h for h in hab_requises if h not in habs_tech]
 
         if dispo == "Disponible":
