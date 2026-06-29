@@ -91,7 +91,7 @@ def init_session_state():
             "temp": [67.0] * 30,
             "vib":  [0.8]  * 30,
             "pres": [4.4]  * 30,
-            "rul":  [72.0] * 30,
+            "rul":  [365.0] * 30,
         }
     defaults = {
         "base_temp": 67.0,
@@ -123,7 +123,7 @@ def update_sensors():
         pres_stress = max(0.0, abs(c_pres - 4.5) / 4.0)
         stress = min(1.0, temp_stress * 0.50 + vib_stress * 0.40 + pres_stress * 0.10)
         # Exposant 3 → Nominal ≈ 70 j  |  Surchauffe ≈ 1 j
-        c_rul  = max(0, int(72 * (1.0 - stress) ** 3))
+        c_rul  = max(0, int(365 * (1.0 - stress) ** 6))
 
         for key, val in zip(["temp", "vib", "pres", "rul"], [c_temp, c_vib, c_pres, c_rul]):
             st.session_state.history[key].append(val)
@@ -140,5 +140,5 @@ def update_sensors():
         c_rul  = st.session_state.history["rul"][-1]
 
     r_status = "Nominal" if c_rul > 60 else ("Alerte" if c_rul > 2 else "Critique")
-    rul_pct  = float(max(0.0, min(1.0, c_rul / 72.0)))
+    rul_pct  = float(max(0.0, min(1.0, c_rul / 365.0)))
     return c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_pct
