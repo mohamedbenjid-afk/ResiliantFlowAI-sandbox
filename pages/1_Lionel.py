@@ -66,14 +66,14 @@ c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_pct = update_sensors()
 STATUS_COLOR = {"Nominal": "#166534", "Alerte": "#b45309", "Critique": "#b91c1c"}
 STATUS_BG    = {"Nominal": "#dcfce7", "Alerte": "#fef3c7", "Critique": "#fee2e2"}
 
-# ── TABS — Sandbox : K0 uniquement (K1-K4 masqués) ──────────────────────────
-_show_k2 = False
-_tabs = st.tabs(["📡 K0 — Surveillance"])
+# ── TABS — Tous les onglets K0 à K4 activés ──────────────────────────────────
+_show_k2 = True
+_tabs = st.tabs(["📡 K0 — Surveillance", "📋 K1 — Briefing", "🔧 K2 — Procédure", "✅ K3 — Post-intervention", "⚖️ K4 — Arbitrage"])
 tab0 = _tabs[0]
-tab1 = None
-tab2 = None
-tab3 = None
-tab4 = None
+tab1 = _tabs[1]
+tab2 = _tabs[2]
+tab3 = _tabs[3]
+tab4 = _tabs[4]
 
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 0 — K0 SURVEILLANCE
