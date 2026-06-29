@@ -17,6 +17,6 @@ pg = st.navigation(
         st.Page("pages/3_Antoine.py",  title="Antoine — Directeur", icon="📊"),
         st.Page("pages/4_Leila.py",    title="Leila — HSE",      icon="🛡️"),
     ],
-    position="hidden"   # On masque la nav auto Streamlit, on gère nous-mêmes
+    position="sidebar"  # Navigation visible dans la sidebar
 )
 pg.run()
