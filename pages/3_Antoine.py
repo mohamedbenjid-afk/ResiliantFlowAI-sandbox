@@ -38,8 +38,9 @@ if st.sidebar.button("⏸️ Pause / ▶️ Reprendre", use_container_width=True
 st.sidebar.caption("Statut machine : Pompe P-17 (Unité B)")
 st.sidebar.caption("Horodatage système : t = " + str(st.session_state.tick))
 
-# US-A0 : sidebar corrigée — RUL + statut sur une seule ligne claire
-st.sidebar.caption(f"RUL estimé : {c_rul}h — {r_status}")
+# US-A0 : sidebar corrigée — RUL + statut sur une seule ligne, avec code couleur
+_sidebar_icon = {"Nominal": "🟢", "Alerte": "🟠", "Critique": "🔴"}.get(r_status, "⚪")
+st.sidebar.caption(f"{_sidebar_icon} RUL estimé : {c_rul}h — **{r_status}**")
 
 st.sidebar.page_link("streamlit_home.py", label="⬅️ Retour à l'accueil", use_container_width=True)
 
