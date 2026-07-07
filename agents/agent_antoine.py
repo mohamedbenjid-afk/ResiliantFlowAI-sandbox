@@ -17,6 +17,11 @@ Correctifs v3 (alignement schéma Notion ESCP + bases [SANDBOX]) :
     cause racine, durée d'arrêt OF) neutralisés en None / 0.0
   - Score de risque portfolio recalculé uniquement sur RUL + statut
     (plus de température/vibration, absentes du schéma ESCP)
+
+Correctifs v4 (Priorité 1 — DB IDs) :
+  - Les 4 DB IDs [SANDBOX] utilisés précédemment ne correspondaient pas aux
+    IDs officiels du schéma ESCP indiqués dans le briefing. Remplacés par
+    les IDs corrects (machines, ordres_fab, historique, pieces).
 """
 
 import os, json
@@ -60,11 +65,11 @@ def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None)
     return results
 
 
-# ── IDs Notion — bases [SANDBOX] ──────────────────────────────────────────────
-DB_MACHINES   = "bd46b2ff-be3d-82fc-b84d-01ff9ab0755a"   # 🏭 [SANDBOX] Équipements
-DB_ORDRES_FAB = "7f16b2ff-be3d-83d1-8b97-01bed26855a3"   # 📋 [SANDBOX] Ordres de Fabrication
-DB_HISTORIQUE = "7916b2ff-be3d-83ae-b000-01a13f5ca17a"   # 🔩 [SANDBOX] Plan de Maintenance
-DB_PIECES     = "b046b2ff-be3d-8216-81f1-810677ff6573"   # 📦 [SANDBOX] Stock Composants
+# ── IDs Notion — bases ESCP (schéma correct) ──────────────────────────────────
+DB_MACHINES   = "6653da63-bd5a-4191-815c-576b8c7fcfbc"   # machines / équipements
+DB_ORDRES_FAB = "687e40c2-a3ff-4de0-be55-20cf411f5dd6"   # ordres de fabrication
+DB_HISTORIQUE = "94babab5-03bb-4c4d-9053-08d5bff301e3"   # historique interventions
+DB_PIECES     = "ef896795-bd1a-4b20-a8ea-f121c9f846ff"   # pièces détachées
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
