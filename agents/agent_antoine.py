@@ -8,6 +8,15 @@ Améliorations v2 :
   - Vue portfolio multi-machine avec ranking par risque
   - Simulation 3 scénarios NPV (correctif / prescriptif / remplacement)
   - run_agent_antoine() retourne un dict avec données brutes pour le PDF CODIR
+
+Correctifs v3 (alignement schéma Notion ESCP + bases [SANDBOX]) :
+  - IDs de bases remplacés par les bases [SANDBOX]
+  - Noms de champs alignés sur le schéma ESCP réel
+  - Champs absents du schéma ESCP (température/vibration temps réel,
+    score de dégradation, coûts d'arrêt détaillés, RUL avant/après,
+    cause racine, durée d'arrêt OF) neutralisés en None / 0.0
+  - Score de risque portfolio recalculé uniquement sur RUL + statut
+    (plus de température/vibration, absentes du schéma ESCP)
 """
 
 import os, json
@@ -51,11 +60,11 @@ def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None)
     return results
 
 
-# ── IDs Notion ────────────────────────────────────────────────────────────────
-DB_MACHINES   = "5279cb2a42b54b42936e22313521f825"
-DB_ORDRES_FAB = "d7ee45dab07943c1bda09a6b47089202"
-DB_HISTORIQUE = "6f53558bfbee455891efa53b6536d892"
-DB_PIECES     = "c22138baa8ca4806b19403108735bc68"
+# ── IDs Notion — bases [SANDBOX] ──────────────────────────────────────────────
+DB_MACHINES   = "bd46b2ff-be3d-82fc-b84d-01ff9ab0755a"   # 🏭 [SANDBOX] Équipements
+DB_ORDRES_FAB = "7f16b2ff-be3d-83d1-8b97-01bed26855a3"   # 📋 [SANDBOX] Ordres de Fabrication
+DB_HISTORIQUE = "7916b2ff-be3d-83ae-b000-01a13f5ca17a"   # 🔩 [SANDBOX] Plan de Maintenance
+DB_PIECES     = "b046b2ff-be3d-8216-81f1-810677ff6573"   # 📦 [SANDBOX] Stock Composants
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -82,28 +91,28 @@ def _p(page): return page.get("properties", {})
 def get_bilan_equipement(nom: str) -> dict:
     """État de dégradation et données de fiabilité pour évaluer un remplacement CAPEX."""
     res = _notion_query(DB_MACHINES,
-        filter_obj={"property": "Nom Machine", "title": {"contains": nom}})
+        filter_obj={"property": "Équipement", "title": {"contains": nom}})
     if not res:
         return {"erreur": f"'{nom}' non trouvé dans la base machines"}
     p = _p(res[0])
-    score_deg = _num(p.get("Score dégradation (%)"))
+    rul_jours = round(_num(p.get("RUL nominal (h)")) / 24, 1)
     return {
-        "machine":               _text(p.get("Nom Machine")),
+        "machine":               _text(p.get("Équipement")),
         "id_machine":            _text(p.get("ID Machine")),
         "type":                  _text(p.get("Type")),
         "statut":                _text(p.get("Statut")),
-        "rul_jours":             _num(p.get("RUL (jours)")),
-        "score_degradation_pct": score_deg,
-        "vie_restante_pct":      round(100 - score_deg, 1),
-        "temperature_actuelle":  _num(p.get("Température actuelle (°C)")),
-        "vibration_actuelle":    _num(p.get("Vibration actuelle (mm/s)")),
-        "seuil_temp":            _num(p.get("Seuil température (°C)")),
-        "seuil_vib":             _num(p.get("Seuil vibration (mm/s)")),
-        "unite":                 _text(p.get("Unité / Zone")),
-        "responsable":           _text(p.get("Responsable")),
-        "derniere_inspection":   _text(p.get("Dernière inspection")),
-        "prochaine_maintenance": _text(p.get("Prochaine maintenance")),
-        "notes_ia":              _text(p.get("Notes IA")),
+        "rul_jours":             rul_jours,
+        "score_degradation_pct": None,   # absent du schéma ESCP
+        "vie_restante_pct":      None,   # dépend du score de dégradation, absent
+        "temperature_actuelle":  None,   # absent du schéma ESCP (pas de capteur temps réel en Notion)
+        "vibration_actuelle":    None,   # absent du schéma ESCP
+        "seuil_temp":            _num(p.get("Seuil Température (°C)")),
+        "seuil_vib":             _num(p.get("Seuil Vibration (mm/s)")),
+        "unite":                 _text(p.get("Ligne de production")),
+        "responsable":           _text(p.get("Technicien référent")),
+        "derniere_inspection":   None,   # absent du schéma ESCP
+        "prochaine_maintenance": None,   # absent du schéma ESCP
+        "notes_ia":              _text(p.get("Notes")),
     }
 
 
@@ -111,8 +120,8 @@ def get_bilan_equipement(nom: str) -> dict:
 def get_historique_couts_maintenance(equipement: str) -> dict:
     """Coûts cumulés, ROI prescriptif, MTBF et MTTR calculés depuis l'historique réel."""
     res = _notion_query(DB_HISTORIQUE,
-        filter_obj={"property": "Machine", "rich_text": {"contains": equipement}},
-        sorts=[{"property": "Date intervention", "direction": "ascending"}])
+        filter_obj={"property": "Équipement", "rich_text": {"contains": equipement}},
+        sorts=[{"property": "Date planifiée", "direction": "ascending"}])
 
     toutes, pannes, prescriptives = [], [], []
     cout_total, cout_arrets = 0.0, 0.0
@@ -121,14 +130,14 @@ def get_historique_couts_maintenance(equipement: str) -> dict:
     for page in res:
         p      = _p(page)
         statut = _text(p.get("Statut"))
-        type_  = _text(p.get("Type"))
-        cout   = _num(p.get("Coût intervention (€)"))
-        arret  = _num(p.get("Coût arrêt production (€)"))
+        type_  = _text(p.get("Type d'intervention"))
+        cout   = _num(p.get("Coût estimé (€)"))
+        arret  = 0.0   # "Coût arrêt production (€)" absent du schéma ESCP
         duree_r= _num(p.get("Durée réelle (h)"))
-        date_i = _text(p.get("Date intervention"))
+        date_i = _text(p.get("Date planifiée"))
 
         entry = {
-            "titre":           _text(p.get("Titre intervention")),
+            "titre":           _text(p.get("Intervention")),
             "type":            type_,
             "statut":          statut,
             "date":            date_i,
@@ -136,20 +145,20 @@ def get_historique_couts_maintenance(equipement: str) -> dict:
             "duree_reelle_h":  duree_r,
             "cout_eur":        cout,
             "cout_arret_eur":  arret,
-            "rul_avant":       _num(p.get("RUL avant intervention (j)")),
-            "rul_apres":       _num(p.get("RUL après intervention (j)")),
-            "cause_racine":    _text(p.get("Cause racine")),
+            "rul_avant":       None,   # absent du schéma ESCP
+            "rul_apres":       None,   # absent du schéma ESCP
+            "cause_racine":    None,   # absent du schéma ESCP
         }
         toutes.append(entry)
 
-        if statut == "Terminée":
+        if statut == "Réalisée":
             cout_total  += cout
             cout_arrets += arret
-            if type_ == "Panne corrective":
+            if type_ == "Corrective":
                 pannes.append(entry)
                 if duree_r > 0: durees_pannes.append(duree_r)
                 if date_i:      dates_pannes.append(date_i)
-            if type_ == "Maintenance prescriptive":
+            if type_ == "Prédictive":
                 prescriptives.append(entry)
 
     # MTBF
@@ -193,18 +202,18 @@ def get_historique_couts_maintenance(equipement: str) -> dict:
 def get_exposition_financiere_production(equipement: str) -> dict:
     """Coût d'exposition totale si la machine tombe en panne non planifiée."""
     res = _notion_query(DB_ORDRES_FAB,
-        filter_obj={"property": "Machine impactée", "rich_text": {"contains": equipement}})
+        filter_obj={"property": "Équipement concerné", "rich_text": {"contains": equipement}})
     exposition_totale = 0.0
     details = []
     for page in res:
         p    = _p(page)
-        cout = _num(p.get("Coût arrêt (€)"))
+        cout = _num(p.get("Coût arrêt horaire (€)"))
         exposition_totale += cout
         details.append({
-            "reference":      _text(p.get("Référence OF")),
-            "statut":         _text(p.get("Statut OF")),
+            "reference":      _text(p.get("Ordre de Fabrication")),
+            "statut":         _text(p.get("Statut")),
             "cout_arret_eur": cout,
-            "duree_arret_h":  _num(p.get("Durée arrêt (h)")),
+            "duree_arret_h":  0.0,   # "Durée arrêt (h)" absent du schéma ESCP
         })
     return {
         "exposition_financiere_totale_eur": round(exposition_totale, 2),
@@ -217,7 +226,7 @@ def get_exposition_financiere_production(equipement: str) -> dict:
 def get_etat_stock_strategique(equipement: str) -> dict:
     """Valeur immobilisée en stock + pièces critiques — vision trésorerie."""
     res = _notion_query(DB_PIECES,
-        filter_obj={"property": "Machine concernée", "rich_text": {"contains": equipement}})
+        filter_obj={"property": "Équipements compatibles", "rich_text": {"contains": equipement}})
     valeur_stock = 0.0
     pieces = []
     for page in res:
@@ -228,13 +237,13 @@ def get_etat_stock_strategique(equipement: str) -> dict:
         statut = _text(p.get("Statut stock"))
         valeur_stock += valeur
         pieces.append({
-            "designation":        _text(p.get("Désignation pièce")),
-            "reference":          _text(p.get("Référence")),
+            "designation":        _text(p.get("Composant")),
+            "reference":          _text(p.get("Réf. fabricant")),
             "stock":              stock,
             "prix_unitaire":      prix,
             "valeur_immobilisee": valeur,
             "statut_stock":       statut,
-            "delai_livraison":    _num(p.get("Délai livraison (j)")),
+            "delai_livraison":    _num(p.get("Délai réappro (jours)")),
         })
     return {
         "valeur_stock_immobilisee_eur": round(valeur_stock, 2),
@@ -248,29 +257,32 @@ def get_etat_stock_strategique(equipement: str) -> dict:
 # ── OUTIL 5 : portfolio multi-machine ─────────────────────────────────────────
 def get_top_equipements_a_risque() -> dict:
     """
-    Vue portfolio DT : toutes les machines classées par score de risque combiné
-    (RUL, dégradation, dépassements seuils, statut).
+    Vue portfolio DT : toutes les machines classées par score de risque combiné.
+
+    Le schéma ESCP ne contient pas de capteurs temps réel (température/vibration
+    actuelles) ni de score de dégradation : le score de risque est donc calculé
+    uniquement à partir du RUL et du statut de la machine.
     """
     machines = _notion_query(DB_MACHINES)
     ranking  = []
 
+    statut_score_map = {
+        "Critique":      100,
+        "Alerte":        60,
+        "Hors service":  80,
+        "Nominal":       0,
+    }
+
     for m in machines:
-        p           = _p(m)
-        nom         = _text(p.get("Nom Machine"))
-        rul         = _num(p.get("RUL (jours)")) or 999
-        deg         = _num(p.get("Score dégradation (%)"))
-        statut      = _text(p.get("Statut"))
-        temp        = _num(p.get("Température actuelle (°C)"))
-        seuil_temp  = _num(p.get("Seuil température (°C)")) or 9999
-        vib         = _num(p.get("Vibration actuelle (mm/s)"))
-        seuil_vib   = _num(p.get("Seuil vibration (mm/s)")) or 9999
+        p      = _p(m)
+        nom    = _text(p.get("Équipement"))
+        rul    = round(_num(p.get("RUL nominal (h)")) / 24, 1) or 999
+        statut = _text(p.get("Statut"))
 
         rul_score    = max(0, min(100, (1 - rul / 180) * 100)) if rul < 180 else 0
-        seuil_score  = (50 if temp > seuil_temp else 0) + (50 if vib > seuil_vib else 0)
-        statut_score = {"Alerte critique": 100, "En maintenance": 60,
-                        "Arrêtée": 80, "En service": 0}.get(statut, 0)
+        statut_score = statut_score_map.get(statut, 0)
 
-        risque = round(0.40 * rul_score + 0.35 * deg + 0.15 * seuil_score + 0.10 * statut_score, 1)
+        risque = round(0.60 * rul_score + 0.40 * statut_score, 1)
         niveau = ("🔴 CRITIQUE" if risque >= 70 else
                   "🟠 ÉLEVÉ"   if risque >= 45 else
                   "🟡 MODÉRÉ"  if risque >= 25 else "🟢 FAIBLE")
@@ -278,15 +290,13 @@ def get_top_equipements_a_risque() -> dict:
         ranking.append({
             "machine":               nom,
             "id_machine":            _text(p.get("ID Machine")),
-            "unite":                 _text(p.get("Unité / Zone")),
-            "responsable":           _text(p.get("Responsable")),
+            "unite":                 _text(p.get("Ligne de production")),
+            "responsable":           _text(p.get("Technicien référent")),
             "statut":                statut,
             "rul_jours":             rul if rul < 999 else 0,
-            "score_degradation_pct": deg,
+            "score_degradation_pct": None,   # absent du schéma ESCP
             "score_risque":          risque,
             "niveau_risque":         niveau,
-            "depassement_temp":      temp > seuil_temp,
-            "depassement_vib":       vib > seuil_vib,
         })
 
     ranking.sort(key=lambda x: x["score_risque"], reverse=True)
@@ -316,9 +326,9 @@ def simuler_scenarios_investissement(
     bilan = get_bilan_equipement(equipement)
 
     pannes = [i for i in hist["detail_interventions"]
-              if i["type"] == "Panne corrective" and i["statut"] == "Terminée"]
+              if i["type"] == "Corrective" and i["statut"] == "Réalisée"]
     presc  = [i for i in hist["detail_interventions"]
-              if i["type"] == "Maintenance prescriptive" and i["statut"] == "Terminée"]
+              if i["type"] == "Prédictive" and i["statut"] == "Réalisée"]
 
     cout_panne_moyen = (
         sum(p["cout_eur"] + p["cout_arret_eur"] for p in pannes) / len(pannes)
@@ -332,7 +342,8 @@ def simuler_scenarios_investissement(
     pannes_par_an_correctif   = round(365 / mtbf, 2)
     pannes_par_an_prescriptif = round(pannes_par_an_correctif * 0.20, 2)
 
-    deg              = bilan.get("score_degradation_pct", 50) if isinstance(bilan, dict) else 50
+    deg_raw          = bilan.get("score_degradation_pct") if isinstance(bilan, dict) else None
+    deg              = deg_raw if deg_raw is not None else 50   # champ absent du schéma ESCP -> valeur par défaut
     facteur_escalade = 1 + (deg / 100) * 0.30
 
     def npv(cashflows):
@@ -402,7 +413,7 @@ def simuler_scenarios_investissement(
 TOOLS = [
     {
         "name": "get_bilan_equipement",
-        "description": "Bilan de vie : RUL, score dégradation, vie restante, seuils.",
+        "description": "Bilan de vie : RUL, statut, seuils.",
         "input_schema": {"type": "object", "properties": {"nom": {"type": "string"}}, "required": ["nom"]}
     },
     {
@@ -512,7 +523,7 @@ def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None) -> dict
 
     portfolio_lines = "\n".join(
         f"  - {m['machine']} ({m['unite']}) : RUL={m['rul_jours']}j, "
-        f"dégradation={m['score_degradation_pct']}%, risque={m['score_risque']}/100 {m['niveau_risque']}"
+        f"risque={m['score_risque']}/100 {m['niveau_risque']}"
         for m in raw_portfolio.get("ranking", [])
     )
 
@@ -524,10 +535,9 @@ DONNÉES D'ANALYSE — {equipement}{rul_info}
 {portfolio_lines or "Aucune machine disponible."}
 
 ## BILAN ÉQUIPEMENT {equipement}
-- Statut : {raw_bilan.get('statut', '—')} | Unité : {raw_bilan.get('unite', '—')}
-- RUL : {raw_bilan.get('rul_jours', '—')} j | Dégradation : {raw_bilan.get('score_degradation_pct', '—')} %
-- Température : {raw_bilan.get('temperature_actuelle', '—')} °C (seuil {raw_bilan.get('seuil_temp', '—')} °C)
-- Vibration : {raw_bilan.get('vibration_actuelle', '—')} mm/s (seuil {raw_bilan.get('seuil_vib', '—')} mm/s)
+- Statut : {raw_bilan.get('statut', '—')} | Ligne de production : {raw_bilan.get('unite', '—')}
+- RUL : {raw_bilan.get('rul_jours', '—')} j
+- Seuil température : {raw_bilan.get('seuil_temp', '—')} °C | Seuil vibration : {raw_bilan.get('seuil_vib', '—')} mm/s
 
 ## HISTORIQUE MAINTENANCE
 - {hist.get('nb_interventions', 0)} interventions dont {hist.get('nb_pannes_correctives', 0)} pannes correctives
