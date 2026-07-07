@@ -22,6 +22,13 @@ Correctifs v4 (Priorité 1 — DB IDs) :
   - Les 4 DB IDs [SANDBOX] utilisés précédemment ne correspondaient pas aux
     IDs officiels du schéma ESCP indiqués dans le briefing. Remplacés par
     les IDs corrects (machines, ordres_fab, historique, pieces).
+
+Correctifs v5 (revue Priorités 1-3 + fix bug RUL) :
+  - Priorités 1/2/3 revérifiées champ par champ contre le briefing : conformes.
+  - Fix : dans get_top_equipements_a_risque(), le fallback "or 999" sur le RUL
+    masquait à tort un RUL réellement égal à 0 (machine en fin de vie totale),
+    ce qui inversait le score de risque (0 au lieu de 100). Le fallback ne
+    s'applique désormais que si le champ est réellement absent (None).
 """
 
 import os, json
@@ -65,7 +72,7 @@ def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None)
     return results
 
 
-# ── IDs Notion — bases ESCP (schéma correct) ──────────────────────────────────
+# ── IDs Notion — bases ESCP (schéma correct) — PRIORITÉ 1 ────────────────────
 DB_MACHINES   = "6653da63-bd5a-4191-815c-576b8c7fcfbc"   # machines / équipements
 DB_ORDRES_FAB = "687e40c2-a3ff-4de0-be55-20cf411f5dd6"   # ordres de fabrication
 DB_HISTORIQUE = "94babab5-03bb-4c4d-9053-08d5bff301e3"   # historique interventions
@@ -92,7 +99,7 @@ def _num(prop) -> float:
 def _p(page): return page.get("properties", {})
 
 
-# ── OUTIL 1 : bilan équipement ────────────────────────────────────────────────
+# ── OUTIL 1 : bilan équipement — PRIORITÉ 2 ──────────────────────────────────
 def get_bilan_equipement(nom: str) -> dict:
     """État de dégradation et données de fiabilité pour évaluer un remplacement CAPEX."""
     res = _notion_query(DB_MACHINES,
@@ -121,7 +128,7 @@ def get_bilan_equipement(nom: str) -> dict:
     }
 
 
-# ── OUTIL 2 : historique coûts + MTBF/MTTR ────────────────────────────────────
+# ── OUTIL 2 : historique coûts + MTBF/MTTR — PRIORITÉ 3 ──────────────────────
 def get_historique_couts_maintenance(equipement: str) -> dict:
     """Coûts cumulés, ROI prescriptif, MTBF et MTTR calculés depuis l'historique réel."""
     res = _notion_query(DB_HISTORIQUE,
@@ -279,10 +286,19 @@ def get_top_equipements_a_risque() -> dict:
     }
 
     for m in machines:
-        p      = _p(m)
-        nom    = _text(p.get("Équipement"))
-        rul    = round(_num(p.get("RUL nominal (h)")) / 24, 1) or 999
-        statut = _text(p.get("Statut"))
+        p       = _p(m)
+        nom     = _text(p.get("Équipement"))
+        statut  = _text(p.get("Statut"))
+
+        # Fix v5 : le fallback à 999 (= "aucun risque lié au RUL") ne doit
+        # s'appliquer que si le champ RUL est réellement absent, pas si sa
+        # valeur numérique vaut 0 (ce qui correspond au contraire au risque
+        # maximal — machine en fin de vie totale).
+        rul_raw = p.get("RUL nominal (h)")
+        if rul_raw is not None and _text(rul_raw) != "":
+            rul = round(_num(rul_raw) / 24, 1)
+        else:
+            rul = 999
 
         rul_score    = max(0, min(100, (1 - rul / 180) * 100)) if rul < 180 else 0
         statut_score = statut_score_map.get(statut, 0)
