@@ -192,7 +192,7 @@ with tab2:
 
     st.markdown("---")
 
-    # ── ANALYSE AGENT ANTOINE ─────────────────────────────────────────────────
+    # ── US-A2 : SIMULATION AGENT ANTOINE ──────────────────────────────────────
     st.markdown("#### 🤖 Analyse stratégique complète — Agent Antoine")
     st.write(
         "L'agent interroge toutes les machines du parc, calcule le MTBF/MTTR réel depuis "
@@ -200,16 +200,20 @@ with tab2:
         "et alimente la fiche CODIR PDF."
     )
 
-    if st.button("▶️ Lancer l'analyse stratégique", use_container_width=True):
+    if st.button("▶️ Lancer la simulation", use_container_width=True, key="btn_lancer_simulation"):
         st.session_state.running = False
         with st.spinner("L'agent Antoine interroge le parc machines et simule les scénarios…"):
             try:
                 from agents.agent_antoine import run_agent_antoine
+                # NB : run_agent_antoine() n'accepte que "equipement" et "c_rul".
+                # Le schéma Notion ESCP ne contient pas de champs température/vibration
+                # temps réel (cf. BRIEFING), donc c_temp/c_vib/c_pres ne sont pas transmis
+                # à l'agent — ils restent affichés uniquement dans le simulateur capteurs.
                 result = run_agent_antoine(equipement="Pompe P-17", c_rul=int(c_rul))
                 st.session_state.antoine_result    = result
                 st.session_state.antoine_pdf_bytes = None  # reset PDF
                 st.session_state.antoine_pdf_ref   = None
-                st.success("✅ Analyse complète générée.")
+                st.success("✅ Simulation complète générée.")
             except Exception as e:
                 st.error(f"❌ Erreur agent : {e}")
                 st.exception(e)
@@ -225,28 +229,61 @@ with tab2:
             hk3.metric("ROI Prescriptif", f"× {hist.get('roi_maintenance', '—')}")
             hk4.metric("OPEX cumulé", f"{hist.get('cout_total_maintenance_eur', 0):,.0f} €")
 
+        # ── Tableau des scénarios (result['scenarios']) ───────────────────────
         sc = result.get("scenarios")
         if sc and sc.get("scenarios"):
             st.markdown("##### 💰 Simulation 3 scénarios — NPV sur "
                         f"{sc.get('horizon_ans', 3)} ans")
+
             sc_data = sc["scenarios"]
-            sa, sb, sc3 = st.columns(3)
             a = sc_data.get("A_correctif_pur", {})
             b = sc_data.get("B_maintien_prescriptif", {})
             c = sc_data.get("C_remplacement", {})
 
-            with sa:
-                st.error(f"**A — Correctif pur**\n\nCoût total : **{a.get('cout_total_eur',0):,.0f} €**\n\nNPV : {a.get('npv_eur',0):,.0f} €")
-            with sb:
-                st.success(f"**B — Prescriptif (actuel)**\n\nCoût total : **{b.get('cout_total_eur',0):,.0f} €**\n\nNPV : {b.get('npv_eur',0):,.0f} €")
-            with sc3:
-                st.info(f"**C — Remplacement**\n\nCoût total : **{c.get('cout_total_eur',0):,.0f} €**\n\nPoint mort : {c.get('payback_vs_correctif_mois','—')} mois")
+            df_scenarios = pd.DataFrame([
+                {
+                    "Scénario":     "A — Correctif pur",
+                    "Description":  a.get("description", "—"),
+                    "Coût total (€)": a.get("cout_total_eur", 0),
+                    "NPV (€)":      a.get("npv_eur", 0),
+                    "Point mort (mois)": "—",
+                },
+                {
+                    "Scénario":     "B — Maintien prescriptif",
+                    "Description":  b.get("description", "—"),
+                    "Coût total (€)": b.get("cout_total_eur", 0),
+                    "NPV (€)":      b.get("npv_eur", 0),
+                    "Point mort (mois)": "—",
+                },
+                {
+                    "Scénario":     "C — Remplacement",
+                    "Description":  c.get("description", "—"),
+                    "Coût total (€)": c.get("cout_total_eur", 0),
+                    "NPV (€)":      c.get("npv_eur", 0),
+                    "Point mort (mois)": c.get("payback_vs_correctif_mois", "—"),
+                },
+            ])
+
+            st.dataframe(
+                df_scenarios.style.format({
+                    "Coût total (€)": "{:,.0f}",
+                    "NPV (€)":        "{:,.0f}",
+                }),
+                use_container_width=True,
+                hide_index=True,
+            )
 
             reco = sc.get("recommandation_financiere", "")
             eco  = sc.get("economie_prescriptif_vs_correctif_eur", 0)
             st.success(f"✅ **Recommandation agent :** {reco} — Économie vs correctif : **{eco:,.0f} €**")
+
+        # ── Analyse complète du LLM (result['analyse']) en markdown ──────────
+        analyse = result.get("analyse", "")
+        if analyse:
+            st.markdown("##### 📝 Analyse stratégique complète (agent)")
+            st.markdown(analyse)
     else:
-        st.info("Lancez l'analyse stratégique ci-dessus pour afficher les scénarios chiffrés.")
+        st.info("Cliquez sur « ▶️ Lancer la simulation » ci-dessus pour afficher les scénarios chiffrés.")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TAB 3 — US-A3 : Rapport CODIR
