@@ -171,9 +171,9 @@ def _kpis(story, s, ctx):
         (f"{hist.get('mtbf_jours', '—')} j",   "MTBF",           BLEU_CLAIR),
         (f"{hist.get('mttr_heures', '—')} h",   "MTTR",           GRIS_C),
         (f"× {hist.get('roi_maintenance', '—')}","ROI Prescriptif",VERT_CLAIR),
-        (f"{hist.get('cout_total_maintenance_eur', 0):,.0f} €",
+        (f"{hist.get('cout_total_maintenance_eur', 0)/1000:.0f} k€",
                                                  "OPEX Cumul",     GRIS_C),
-        (f"{hist.get('couts_arrets_evites_eur', 0):,.0f} €",
+        (f"{hist.get('couts_arrets_evites_eur', 0)/1000:.0f} k€",
                                                  "Arrêts évités",  VERT_CLAIR),
         (f"{hist.get('nb_pannes_correctives', 0)}","Pannes correctives", ROUGE_CLAIR),
     ]
@@ -184,13 +184,15 @@ def _kpis(story, s, ctx):
     col_w = (W - 4*cm) / 6
     tv = Table(cells_val, colWidths=[col_w]*6)
     tl = Table(cells_lbl, colWidths=[col_w]*6)
+    bg_style = [
+        ("ALIGN",         (0,0), (-1,-1), "CENTER"),
+        ("TOPPADDING",    (0,0), (-1,-1), 6),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+    ]
+    for i, (_, _, c) in enumerate(kpis):
+        bg_style.append(("BACKGROUND", (i,0), (i,-1), c))
     for tbl in [tv, tl]:
-        tbl.setStyle(TableStyle([
-            ("ALIGN",         (0,0), (-1,-1), "CENTER"),
-            ("TOPPADDING",    (0,0), (-1,-1), 6),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 4),
-            ("ROWBACKGROUNDS",(0,0), (-1,-1), [bg_colors]),
-        ]))
+        tbl.setStyle(TableStyle(bg_style))
     story.append(tv)
     story.append(tl)
     story.append(Spacer(1, 0.3*cm))
