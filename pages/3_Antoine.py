@@ -95,7 +95,24 @@ with tab0:
     detail_alertes = kpis.get("detail_alertes")
     if detail_alertes:
         with st.expander("Détail des machines en alerte"):
-            st.write(detail_alertes)
+            cols = st.columns(min(3, len(detail_alertes)))
+            for i, m in enumerate(detail_alertes):
+                with cols[i % 3]:
+                    statut = m.get("statut", "—")
+                    rul    = m.get("rul_jours", "—")
+                    color  = "#fee2e2" if statut == "Critique" else "#fef3c7"
+                    border = "#ef4444" if statut == "Critique" else "#f59e0b"
+                    icon   = "🔴" if statut == "Critique" else "🟠"
+                    st.markdown(
+                        f'''<div style="background:{color};border-left:4px solid {border};
+                        border-radius:6px;padding:10px 14px;margin-bottom:8px;">
+                        <b>{icon} {m.get("nom", m.get("id","—"))}</b><br/>
+                        <span style="font-size:0.85rem;color:#374151;">
+                        Type : {m.get("type","—")}<br/>
+                        RUL : <b>{rul} j</b> &nbsp;|&nbsp; Statut : <b>{statut}</b>
+                        </span></div>''',
+                        unsafe_allow_html=True
+                    )
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TAB 1 — US-A1 : Alertes & Risques
