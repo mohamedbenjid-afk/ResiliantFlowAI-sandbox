@@ -80,7 +80,7 @@ def _S():
     ps("body",     fontName="Helvetica",      fontSize=9,  textColor=GRIS_F,   leading=13, spaceAfter=2)
     ps("body_b",   fontName="Helvetica-Bold", fontSize=9,  textColor=GRIS_F,   leading=13)
     ps("small",    fontName="Helvetica",      fontSize=8,  textColor=GRIS_M,   leading=11)
-    ps("kpi_val",  fontName="Helvetica-Bold", fontSize=22, textColor=BLEU_MED, alignment=TA_CENTER)
+    ps("kpi_val",  fontName="Helvetica-Bold", fontSize=15, textColor=BLEU_MED, alignment=TA_CENTER)
     ps("kpi_lbl",  fontName="Helvetica",      fontSize=8,  textColor=GRIS_M,   alignment=TA_CENTER)
     ps("reco",     fontName="Helvetica-Bold", fontSize=11, textColor=BLEU,     leading=16, spaceAfter=4)
     ps("footer_c", fontName="Helvetica",      fontSize=8,  textColor=GRIS_M,   alignment=TA_CENTER)
@@ -121,12 +121,14 @@ def _cover(story, s, ctx):
     # Tableau info
     eq    = ctx.get("equipement", "—")
     unite = ctx.get("unite", "—")
-    rul   = ctx.get("rul_jours", "—")
-    deg   = ctx.get("score_deg", "—")
+    rul   = ctx.get("rul_jours")
+    deg   = ctx.get("score_deg")
+    rul_str = f"{rul} j" if rul is not None else "—"
+    deg_str = f"{deg} %" if deg is not None else "—"
     data  = [
-        ["Équipement analysé", eq,          "Date CODIR",    ctx["date_codir"]],
-        ["Unité / Zone",       unite,        "Directeur Tech.", "Antoine"],
-        ["RUL estimé",         f"{rul} j",  "Dégradation",   f"{deg} %"],
+        ["Équipement analysé", eq,       "Date CODIR",      ctx["date_codir"]],
+        ["Unité / Zone",       unite,    "Directeur Tech.",  "Antoine"],
+        ["RUL estimé",         rul_str,  "Dégradation",      deg_str],
         ["Statut machine",     ctx.get("statut", "—"), "Horizon analyse", f"{ctx.get('horizon', 3)} ans"],
     ]
     t = Table(data, colWidths=[4.2*cm, 5.8*cm, 4.2*cm, 5.8*cm])
@@ -167,15 +169,18 @@ def _kpis(story, s, ctx):
     story.append(Spacer(1, 0.2*cm))
 
     hist = ctx.get("historique") or {}
+    def _kv(v, suffix="", fallback="—"):
+        if v is None: return fallback
+        if isinstance(v, float) and v == int(v): v = int(v)
+        return f"{v}{suffix}"
     kpis = [
-        (f"{hist.get('mtbf_jours', '—')} j",   "MTBF",           BLEU_CLAIR),
-        (f"{hist.get('mttr_heures', '—')} h",   "MTTR",           GRIS_C),
-        (f"× {hist.get('roi_maintenance', '—')}","ROI Prescriptif",VERT_CLAIR),
-        (f"{hist.get('cout_total_maintenance_eur', 0)/1000:.0f} k€",
-                                                 "OPEX Cumul",     GRIS_C),
-        (f"{hist.get('couts_arrets_evites_eur', 0)/1000:.0f} k€",
-                                                 "Arrêts évités",  VERT_CLAIR),
-        (f"{hist.get('nb_pannes_correctives', 0)}","Pannes correctives", ROUGE_CLAIR),
+        (_kv(hist.get('mtbf_jours'), " j"),    "MTBF",            BLEU_CLAIR),
+        (_kv(hist.get('mttr_heures'), " h"),    "MTTR",            GRIS_C),
+        (_kv(hist.get('roi_maintenance'), "×", "×—").replace("×", "× ") if hist.get('roi_maintenance') else "—",
+                                                 "ROI Prescriptif", VERT_CLAIR),
+        (f"{(hist.get('cout_total_maintenance_eur') or 0)/1000:.0f} k€", "OPEX Cumul",    GRIS_C),
+        (f"{(hist.get('couts_arrets_evites_eur') or 0)/1000:.0f} k€",   "Arrêts évités", VERT_CLAIR),
+        (str(hist.get('nb_pannes_correctives') or 0),                     "Pannes correct.",ROUGE_CLAIR),
     ]
     cells_val = [[Paragraph(v, s["kpi_val"]) for v, _, _ in kpis]]
     cells_lbl = [[Paragraph(l, s["kpi_lbl"]) for _, l, _ in kpis]]
