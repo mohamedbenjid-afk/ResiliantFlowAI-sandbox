@@ -289,30 +289,15 @@ with tab2:
         key=lambda t: (dispo_order.get(t.get("disponibilite", "Congé"), 3), -(t.get("heures_restantes") or 0)),
     )
  
-    # Vérifier quel technicien est en attente de confirmation
-    tech_en_confirmation = None
     for tech in equipe_sorted:
-        confirm_key_check = f"confirm_{tech.get('prenom','')} {tech.get('nom','')}"
-        if st.session_state.get(confirm_key_check, False):
-            tech_en_confirmation = tech
-            break
+        nom_complet   = f"{tech.get('prenom','')} {tech.get('nom','')}"
+        dispo         = tech.get("disponibilite", "Congé")
+        heures        = tech.get("heures_restantes") or 0
+        specialite    = tech.get("specialite", "—")
+        habilitations_raw = tech.get("habilitations") or ""
+        zone              = tech.get("zone", "—")
  
-    # Initialiser toutes les clés de confirmation dès le départ
-    for tech in equipe_sorted:
-        ck = f"confirm_{tech.get('prenom','')} {tech.get('nom','')}"
-        if ck not in st.session_state:
-            st.session_state[ck] = False
- 
-    # MODE CONFIRMATION — afficher uniquement le technicien concerné
-    if tech_en_confirmation:
-        nom_complet = f"{tech_en_confirmation.get('prenom','')} {tech_en_confirmation.get('nom','')}"
-        confirm_key = f"confirm_{nom_complet}"
-        dispo       = tech_en_confirmation.get("disponibilite", "Congé")
-        heures      = tech_en_confirmation.get("heures_restantes") or 0
-        specialite  = tech_en_confirmation.get("specialite", "—")
-        habilitations_raw = tech_en_confirmation.get("habilitations") or ""
-        zone        = tech_en_confirmation.get("zone", "—")
- 
+        # notion_client peut retourner une liste (multi_select) ou une chaîne
         if isinstance(habilitations_raw, list):
             habs_tech     = [str(h).strip() for h in habilitations_raw if str(h).strip()]
             habilitations = ", ".join(habs_tech)
@@ -321,28 +306,39 @@ with tab2:
             habs_tech     = [h.strip() for h in habilitations.split(",") if h.strip()]
         manquantes = [h for h in hab_requises if h not in habs_tech]
  
-        st.markdown(
-            f'<div style="background:#f0fdf4;border-radius:8px;padding:12px;margin-bottom:6px;">'
-            f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-            f'<span>🟢 <b>{nom_complet}</b> — '
-            f'<span style="color:#64748b;font-size:0.85rem;">{specialite} · {zone}</span></span>'
-            f'<span style="color:#166534;font-size:0.85rem;font-weight:600;">'
-            f'{dispo} · {heures}h restantes</span>'
-            f'</div>'
-            f'<div style="font-size:0.78rem;color:#475569;margin-top:2px;">'
-            f'Habilitations : {habilitations or "—"}</div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+        if dispo == "Disponible":
+            bg_tech, color_dispo, icon_dispo = "#f0fdf4", "#166534", "🟢"
+        elif dispo == "En intervention":
+            bg_tech, color_dispo, icon_dispo = "#fef3c7", "#b45309", "🟠"
+        else:
+            bg_tech, color_dispo, icon_dispo = "#f3f4f6", "#6b7280", "⚫"
  
-        st.warning(
-            f"Confirmer l'affectation de **{nom_complet}** sur **{equipement_cible}** "
-            f"({type_intervention}) — RUL actuel : {c_rul}h ?"
-        )
-        col_oui, col_non = st.columns([1, 1])
-        with col_oui:
-            if st.button("✅ Confirmer", key=f"oui_{nom_complet}", use_container_width=True, type="primary"):
-                st.session_state[confirm_key] = False
+        hab_warning = (
+            f'<div style="color:#b91c1c;font-size:0.78rem;margin-top:4px;">'
+            f'⚠️ Habilitation(s) manquante(s) : {", ".join(manquantes)}</div>'
+        ) if manquantes else ""
+ 
+        col_info, col_btn = st.columns([4, 1])
+        with col_info:
+            st.markdown(
+                f'<div style="background:{bg_tech};border-radius:8px;padding:12px;margin-bottom:6px;">'
+                f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                f'<span>{icon_dispo} <b>{nom_complet}</b> — '
+                f'<span style="color:#64748b;font-size:0.85rem;">{specialite} · {zone}</span></span>'
+                f'<span style="color:{color_dispo};font-size:0.85rem;font-weight:600;">'
+                f'{dispo} · {heures}h restantes</span>'
+                f'</div>'
+                f'<div style="font-size:0.78rem;color:#475569;margin-top:2px;">'
+                f'Habilitations : {habilitations or "—"}</div>'
+                f'{hab_warning}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        with col_btn:
+            btn_disabled = dispo != "Disponible"
+            btn_label    = "✅ Affecter" if not btn_disabled else ("🔄 Occupé" if dispo == "En intervention" else "❌ Absent")
+            st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
+            if st.button(btn_label, key=f"btn_affect_{nom_complet}", disabled=btn_disabled, use_container_width=True):
                 today   = datetime.date.today().isoformat()
                 payload = {
                     "titre":         f"Intervention {equipement_cible} — {today}",
@@ -368,69 +364,6 @@ with tab2:
                         st.warning(f"⚠️ Habilitation(s) manquante(s) — non bloquant : {', '.join(manquantes)}")
                 except Exception as e:
                     st.error(f"Erreur Notion : {e}")
-        with col_non:
-            if st.button("❌ Annuler", key=f"non_{nom_complet}", use_container_width=True):
-                st.session_state[confirm_key] = False
-                st.rerun()
- 
-    # MODE LISTE — afficher tous les techniciens
-    else:
-        for tech in equipe_sorted:
-            nom_complet   = f"{tech.get('prenom','')} {tech.get('nom','')}"
-            dispo         = tech.get("disponibilite", "Congé")
-            heures        = tech.get("heures_restantes") or 0
-            specialite    = tech.get("specialite", "—")
-            habilitations_raw = tech.get("habilitations") or ""
-            zone              = tech.get("zone", "—")
-            confirm_key   = f"confirm_{nom_complet}"
- 
-            if isinstance(habilitations_raw, list):
-                habs_tech     = [str(h).strip() for h in habilitations_raw if str(h).strip()]
-                habilitations = ", ".join(habs_tech)
-            else:
-                habilitations = str(habilitations_raw) if habilitations_raw else ""
-                habs_tech     = [h.strip() for h in habilitations.split(",") if h.strip()]
-            manquantes = [h for h in hab_requises if h not in habs_tech]
- 
-            if dispo == "Disponible":
-                bg_tech, color_dispo, icon_dispo = "#f0fdf4", "#166534", "🟢"
-            elif dispo == "En intervention":
-                bg_tech, color_dispo, icon_dispo = "#fef3c7", "#b45309", "🟠"
-            else:
-                bg_tech, color_dispo, icon_dispo = "#f3f4f6", "#6b7280", "⚫"
- 
-            hab_warning = (
-                f'<div style="color:#b91c1c;font-size:0.78rem;margin-top:4px;">'
-                f'⚠️ Habilitation(s) manquante(s) : {", ".join(manquantes)}</div>'
-            ) if manquantes else ""
- 
-            col_info, col_btn = st.columns([4, 1])
-            with col_info:
-                st.markdown(
-                    f'<div style="background:{bg_tech};border-radius:8px;padding:12px;margin-bottom:6px;">'
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                    f'<span>{icon_dispo} <b>{nom_complet}</b> — '
-                    f'<span style="color:#64748b;font-size:0.85rem;">{specialite} · {zone}</span></span>'
-                    f'<span style="color:{color_dispo};font-size:0.85rem;font-weight:600;">'
-                    f'{dispo} · {heures}h restantes</span>'
-                    f'</div>'
-                    f'<div style="font-size:0.78rem;color:#475569;margin-top:2px;">'
-                    f'Habilitations : {habilitations or "—"}</div>'
-                    f'{hab_warning}'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-            with col_btn:
-                btn_disabled = dispo != "Disponible"
-                btn_label    = "✅ Affecter" if not btn_disabled else ("🔄 Occupé" if dispo == "En intervention" else "❌ Absent")
-                st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
- 
-                if confirm_key not in st.session_state:
-                    st.session_state[confirm_key] = False
- 
-                if st.button(btn_label, key=f"btn_affect_{nom_complet}", disabled=btn_disabled, use_container_width=True):
-                    st.session_state[confirm_key] = True
-                    st.rerun()
  
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 3 — S3 RAPPORT HEBDOMADAIRE
@@ -562,3 +495,4 @@ with tab3:
 if st.session_state.running:
     time.sleep(1)
     st.rerun()
+ 
