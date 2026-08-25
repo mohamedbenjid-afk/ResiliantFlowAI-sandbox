@@ -292,8 +292,8 @@ with tab2:
     # Vérifier quel technicien est en attente de confirmation
     tech_en_confirmation = None
     for tech in equipe_sorted:
-        nc_key = f"confirm_{tech.get('prenom','')} {tech.get('nom','')}"
-        if st.session_state.get(nc_key, False):
+        confirm_key_check = f"confirm_{tech.get('prenom','')} {tech.get('nom','')}"
+        if st.session_state.get(confirm_key_check, False):
             tech_en_confirmation = tech
             break
  
@@ -333,7 +333,7 @@ with tab2:
             f"Confirmer l'affectation de **{nom_complet}** sur **{equipement_cible}** "
             f"({type_intervention}) — RUL actuel : {c_rul}h ?"
         )
-        col_oui, col_non = st.columns(2)
+        col_oui, col_non = st.columns([1, 1])
         with col_oui:
             if st.button("✅ Confirmer", key=f"oui_{nom_complet}", use_container_width=True, type="primary"):
                 st.session_state[confirm_key] = False
@@ -556,3 +556,4 @@ with tab3:
 if st.session_state.running:
     time.sleep(1)
     st.rerun()
+ 
