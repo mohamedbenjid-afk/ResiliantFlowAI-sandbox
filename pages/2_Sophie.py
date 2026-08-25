@@ -297,6 +297,12 @@ with tab2:
             tech_en_confirmation = tech
             break
  
+    # Initialiser toutes les clés de confirmation dès le départ
+    for tech in equipe_sorted:
+        ck = f"confirm_{tech.get('prenom','')} {tech.get('nom','')}"
+        if ck not in st.session_state:
+            st.session_state[ck] = False
+ 
     # MODE CONFIRMATION — afficher uniquement le technicien concerné
     if tech_en_confirmation:
         nom_complet = f"{tech_en_confirmation.get('prenom','')} {tech_en_confirmation.get('nom','')}"
@@ -556,4 +562,3 @@ with tab3:
 if st.session_state.running:
     time.sleep(1)
     st.rerun()
- 
