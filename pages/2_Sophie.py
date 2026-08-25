@@ -289,6 +289,12 @@ with tab2:
         key=lambda t: (dispo_order.get(t.get("disponibilite", "Congé"), 3), -(t.get("heures_restantes") or 0)),
     )
 
+    # Vérifier si une confirmation est en cours pour un technicien
+    confirmation_en_cours = any(
+        st.session_state.get(f"confirm_{tech.get('prenom','')} {tech.get('nom','')}", False)
+        for tech in equipe_sorted
+    )
+
     for tech in equipe_sorted:
         nom_complet   = f"{tech.get('prenom','')} {tech.get('nom','')}"
         dispo         = tech.get("disponibilite", "Congé")
@@ -296,6 +302,12 @@ with tab2:
         specialite    = tech.get("specialite", "—")
         habilitations_raw = tech.get("habilitations") or ""
         zone              = tech.get("zone", "—")
+
+        confirm_key = f"confirm_{nom_complet}"
+
+        # Si une confirmation est en cours pour un autre technicien, ne pas afficher celui-ci
+        if confirmation_en_cours and not st.session_state.get(confirm_key, False):
+            continue
 
         # notion_client peut retourner une liste (multi_select) ou une chaîne
         if isinstance(habilitations_raw, list):
@@ -339,8 +351,6 @@ with tab2:
             btn_label    = "✅ Affecter" if not btn_disabled else ("🔄 Occupé" if dispo == "En intervention" else "❌ Absent")
             st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
 
-            # Initialiser l'état de confirmation
-            confirm_key = f"confirm_{nom_complet}"
             if confirm_key not in st.session_state:
                 st.session_state[confirm_key] = False
 
