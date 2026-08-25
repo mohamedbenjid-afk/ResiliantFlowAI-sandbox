@@ -344,9 +344,11 @@ with tab2:
             if confirm_key not in st.session_state:
                 st.session_state[confirm_key] = False
 
-            # Bouton Affecter — déclenche la confirmation
-            if st.button(btn_label, key=f"btn_affect_{nom_complet}", disabled=btn_disabled, use_container_width=True):
-                st.session_state[confirm_key] = True
+            # Bouton Affecter — affiché seulement si pas de confirmation en cours
+            if not st.session_state.get(confirm_key, False):
+                if st.button(btn_label, key=f"btn_affect_{nom_complet}", disabled=btn_disabled, use_container_width=True):
+                    st.session_state[confirm_key] = True
+                    st.rerun()
 
         # Zone de confirmation — affichée sous la ligne du technicien
         if st.session_state.get(confirm_key, False):
