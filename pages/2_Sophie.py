@@ -338,32 +338,55 @@ with tab2:
             btn_disabled = dispo != "Disponible"
             btn_label    = "✅ Affecter" if not btn_disabled else ("🔄 Occupé" if dispo == "En intervention" else "❌ Absent")
             st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
+
+            # Initialiser l'état de confirmation
+            confirm_key = f"confirm_{nom_complet}"
+            if confirm_key not in st.session_state:
+                st.session_state[confirm_key] = False
+
+            # Bouton Affecter — déclenche la confirmation
             if st.button(btn_label, key=f"btn_affect_{nom_complet}", disabled=btn_disabled, use_container_width=True):
-                today   = datetime.date.today().isoformat()
-                payload = {
-                    "titre":         f"Intervention {equipement_cible} — {today}",
-                    "machine":       equipement_cible,
-                    "type":          type_intervention,
-                    "statut":        "Planifiée",
-                    "technicien":    nom_complet,
-                    "date":          today,
-                    "date_realisee": None,
-                    "duree_reelle":  0.0,
-                    "actions":       f"Affectation {type_intervention} sur {equipement_cible}",
-                    "pieces":        "",
-                    "cause_racine":  "",
-                    "cout":          0.0,
-                    "rul_avant":     c_rul,
-                    "observations":  f"Assigné par Sophie — RUL {c_rul}h",
-                }
-                try:
-                    with st.spinner(f"Affectation de {nom_complet}…"):
-                        nc.create_intervention(payload)
-                    st.success(f"✅ {nom_complet} affecté à l'intervention {equipement_cible} !")
-                    if manquantes:
-                        st.warning(f"⚠️ Habilitation(s) manquante(s) — non bloquant : {', '.join(manquantes)}")
-                except Exception as e:
-                    st.error(f"Erreur Notion : {e}")
+                st.session_state[confirm_key] = True
+
+        # Zone de confirmation — affichée sous la ligne du technicien
+        if st.session_state.get(confirm_key, False):
+            st.warning(
+                f"Confirmer l'affectation de **{nom_complet}** sur **{equipement_cible}** "
+                f"({type_intervention}) — RUL actuel : {c_rul}h ?"
+            )
+            col_oui, col_non = st.columns(2)
+            with col_oui:
+                if st.button("✅ Confirmer", key=f"oui_{nom_complet}", use_container_width=True, type="primary"):
+                    st.session_state[confirm_key] = False
+                    today   = datetime.date.today().isoformat()
+                    payload = {
+                        "titre":         f"Intervention {equipement_cible} — {today}",
+                        "machine":       equipement_cible,
+                        "type":          type_intervention,
+                        "statut":        "Planifiée",
+                        "technicien":    nom_complet,
+                        "date":          today,
+                        "date_realisee": None,
+                        "duree_reelle":  0.0,
+                        "actions":       f"Affectation {type_intervention} sur {equipement_cible}",
+                        "pieces":        "",
+                        "cause_racine":  "",
+                        "cout":          0.0,
+                        "rul_avant":     c_rul,
+                        "observations":  f"Assigné par Sophie — RUL {c_rul}h",
+                    }
+                    try:
+                        with st.spinner(f"Affectation de {nom_complet}…"):
+                            nc.create_intervention(payload)
+                        st.success(f"✅ {nom_complet} affecté à l'intervention {equipement_cible} !")
+                        if manquantes:
+                            st.warning(f"⚠️ Habilitation(s) manquante(s) — non bloquant : {', '.join(manquantes)}")
+                    except Exception as e:
+                        st.error(f"Erreur Notion : {e}")
+            with col_non:
+                if st.button("❌ Annuler", key=f"non_{nom_complet}", use_container_width=True):
+                    st.session_state[confirm_key] = False
+                    st.rerun()
 
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 3 — S3 RAPPORT HEBDOMADAIRE
