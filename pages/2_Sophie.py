@@ -485,8 +485,8 @@ with tab3:
     # ── Graphique interventions ───────────────────────────────────────────────
     with col_left:
         st.markdown("### 🗓 Interventions de la semaine")
-        titres = [i.get("titre", "—") for i in historique]
-        durees = [float(i.get("duree_estimee") or 0) for i in historique]
+        titres = [str(i.get("titre") or "—")[:30] for i in historique]
+        durees = [float(i.get("duree_estimee") or i.get("duree_reelle") or 0) for i in historique]
         statuts_hist = [i.get("statut", "—") for i in historique]
         colors_stat  = {"Réalisée": "#22c55e", "Planifiée": "#3b82f6", "En cours": "#f59e0b", "Annulée": "#94a3b8"}
         bar_colors   = [colors_stat.get(s, "#94a3b8") for s in statuts_hist]
