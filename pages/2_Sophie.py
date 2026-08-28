@@ -473,7 +473,6 @@ with tab3:
     n_realisees   = sum(1 for i in historique if i.get("statut") == "Réalisée")
     n_total       = len(historique)
     taux_realisation = round(100 * n_realisees / n_total, 1) if n_total else 0
-    cout_total    = sum(float(i.get("cout_estime") or 0) for i in historique if i.get("statut") == "Réalisée")
     n_ruptures    = sum(1 for p in pieces_stock if p.get("statut_stock") == "Rupture")
     n_dispos      = sum(1 for t in equipe_dispo if t.get("disponibilite") == "Disponible")
     arrêts_evites = n_realisees  # 1 maintenance préventive réalisée = 1 arrêt évité (proxy)
@@ -490,26 +489,35 @@ with tab3:
     # ── Graphique interventions ───────────────────────────────────────────────
     with col_left:
         st.markdown("### 🗓 Interventions de la semaine")
-        titres = [i.get("titre", "—") for i in historique]
-        durees = [float(i.get("duree_estimee") or 0) for i in historique]
-        statuts_hist = [i.get("statut", "—") for i in historique]
-        colors_stat  = {"Réalisée": "#22c55e", "Planifiée": "#3b82f6", "En cours": "#f59e0b", "Annulée": "#94a3b8"}
-        bar_colors   = [colors_stat.get(s, "#94a3b8") for s in statuts_hist]
+        try:
+            def _safe_duree(v):
+                try:
+                    return float(v or 0)
+                except (TypeError, ValueError):
+                    return 0.0
 
-        fig_int = go.Figure(go.Bar(
-            x=titres, y=durees,
-            marker_color=bar_colors,
-            text=statuts_hist,
-            textposition="outside",
-        ))
-        fig_int.update_layout(
-            height=260, margin=dict(l=0, r=0, t=10, b=70),
-            paper_bgcolor="white", plot_bgcolor="white",
-            yaxis=dict(title="Durée estimée (h)", gridcolor="rgba(0,0,0,0.06)"),
-            xaxis=dict(tickangle=-20),
-            showlegend=False,
-        )
-        st.plotly_chart(fig_int, use_container_width=True)
+            titres = [str(i.get("titre") or "—") for i in historique]
+            durees = [_safe_duree(i.get("duree_estimee")) for i in historique]
+            statuts_hist = [str(i.get("statut") or "—") for i in historique]
+            colors_stat  = {"Réalisée": "#22c55e", "Planifiée": "#3b82f6", "En cours": "#f59e0b", "Annulée": "#94a3b8"}
+            bar_colors   = [colors_stat.get(s, "#94a3b8") for s in statuts_hist]
+
+            fig_int = go.Figure(go.Bar(
+                x=titres, y=durees,
+                marker_color=bar_colors,
+                text=statuts_hist,
+                textposition="outside",
+            ))
+            fig_int.update_layout(
+                height=260, margin=dict(l=0, r=0, t=10, b=70),
+                paper_bgcolor="white", plot_bgcolor="white",
+                yaxis=dict(title="Durée estimée (h)", gridcolor="rgba(0,0,0,0.06)"),
+                xaxis=dict(tickangle=-20),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_int, use_container_width=True)
+        except Exception as e:
+            st.warning(f"Graphique indisponible ({e})")
 
     # ── État du stock ─────────────────────────────────────────────────────────
     with col_right:
