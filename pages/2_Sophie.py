@@ -301,7 +301,14 @@ with tab1:
             })
             st.success(f"✅ Décision enregistrée — {decision_label}")
         except Exception as e:
-            st.error(f"❌ Erreur lors de l'enregistrement : {e}")
+            detail = None
+            resp = getattr(e, "response", None)
+            if resp is not None:
+                try:
+                    detail = resp.json().get("message")
+                except Exception:
+                    detail = resp.text[:300] if resp.text else None
+            st.error(f"❌ Erreur lors de l'enregistrement : {detail or e}")
 
     st.markdown("---")
     if st.button("▶️ Lancer l'analyse d'impact IA", use_container_width=True, type="primary"):
