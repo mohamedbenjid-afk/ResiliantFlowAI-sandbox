@@ -443,25 +443,25 @@ with tab3:
     st.markdown(f"## 📊 Rapport hebdomadaire — Semaine {semaine}")
 
     try:
-        historique   = nc.get_historique(machine_id="P-17")
-        pieces_stock = nc.get_pieces(machine_id="P-17")
+        historique   = nc.get_historique()
+        pieces_stock = nc.get_pieces()
         equipe_dispo = nc.get_equipe()
         if not historique and not pieces_stock:
             raise ValueError("Données vides")
     except Exception:
         historique = [
             {"titre": "Remplacement joint P-17",       "type": "Préventive", "statut": "Réalisée",
-             "date": "2026-06-23", "duree_estimee": 2, "technicien": "Lionel B.", "cout_estime": 850},
+             "date": "2026-06-23", "duree_estimee": 2, "technicien": "Lionel B.", "cout_estime": 850, "machine": "P-17"},
             {"titre": "Inspection C-03",                "type": "Inspection", "statut": "Réalisée",
-             "date": "2026-06-24", "duree_estimee": 1, "technicien": "Marc D.",   "cout_estime": 300},
+             "date": "2026-06-24", "duree_estimee": 1, "technicien": "Marc D.",   "cout_estime": 300, "machine": "C-03"},
             {"titre": "Maintenance préventive M-08",   "type": "Préventive", "statut": "Planifiée",
-             "date": "2026-06-30", "duree_estimee": 3, "technicien": "Fatima R.", "cout_estime": 600},
+             "date": "2026-06-30", "duree_estimee": 3, "technicien": "Fatima R.", "cout_estime": 600, "machine": "M-08"},
         ]
         pieces_stock = [
-            {"designation": "Joints d'étanchéité P17",  "statut_stock": "En stock",    "stock_actuel": 2, "stock_minimum": 1},
-            {"designation": "Roulements 6205-2RS",       "statut_stock": "Rupture",     "stock_actuel": 0, "stock_minimum": 2},
-            {"designation": "Garnitures mécaniques",     "statut_stock": "En stock",    "stock_actuel": 3, "stock_minimum": 1},
-            {"designation": "Filtre hydraulique FH-17",  "statut_stock": "Stock faible","stock_actuel": 1, "stock_minimum": 2},
+            {"designation": "Joints d'étanchéité P17",  "statut_stock": "En stock",    "stock_actuel": 2, "stock_minimum": 1, "machine": "P-17"},
+            {"designation": "Roulements 6205-2RS",       "statut_stock": "Rupture",     "stock_actuel": 0, "stock_minimum": 2, "machine": "C-03"},
+            {"designation": "Garnitures mécaniques",     "statut_stock": "En stock",    "stock_actuel": 3, "stock_minimum": 1, "machine": "M-08"},
+            {"designation": "Filtre hydraulique FH-17",  "statut_stock": "Stock faible","stock_actuel": 1, "stock_minimum": 2, "machine": "P-17"},
         ]
         equipe_dispo = [
             {"nom": "Bernard",  "prenom": "Lionel", "disponibilite": "Disponible",     "heures_restantes": 8},
@@ -568,17 +568,14 @@ with tab3:
                 from utils.pdf_sophie import generate_sophie_pdf
                 pdf_data = {
                     "semaine":          semaine,
-                    "machine":          "Pompe P-17",
+                    "machine":          "P-17, C-03, M-08",
                     "rul":              c_rul,
                     "statut":           r_status,
-                    "temp":             round(float(c_temp), 1),
-                    "vib":              round(float(c_vib), 2),
                     "taux_realisation": taux_realisation,
                     "arrets_evites":    arrêts_evites,
                     "n_ruptures":       n_ruptures,
                     "n_dispos":         n_dispos,
                     "n_equipe":         len(equipe_dispo),
-                    "cout_total":       cout_total,
                     "historique":       historique,
                     "pieces_stock":     pieces_stock,
                     "equipe_dispo":     equipe_dispo,
