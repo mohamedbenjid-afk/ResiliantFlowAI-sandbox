@@ -309,6 +309,14 @@ with tab1:
                 except Exception:
                     detail = resp.text[:300] if resp.text else None
             st.error(f"❌ Erreur lors de l'enregistrement : {detail or e}")
+            with st.expander("🔍 Détail technique (debug)"):
+                st.write("Type d'exception :", type(e).__name__)
+                st.write("A un attribut .response ?", resp is not None)
+                if resp is not None:
+                    st.write("Code HTTP :", getattr(resp, "status_code", "?"))
+                    st.code(getattr(resp, "text", "(vide)"), language="json")
+                else:
+                    st.code(repr(e))
 
     st.markdown("---")
     if st.button("▶️ Lancer l'analyse d'impact IA", use_container_width=True, type="primary"):
