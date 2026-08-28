@@ -18,7 +18,8 @@ DB_IDS = {
     "pieces":     "b046b2ff-be3d-8216-81f1-810677ff6573",   # 📦 [SANDBOX] Stock Composants
     "ordres_fab": "7f16b2ff-be3d-83d1-8b97-01bed26855a3",   # 📋 [SANDBOX] Ordres de Fabrication
     "historique": "7916b2ff-be3d-83ae-b000-01a13f5ca17a",   # 🔩 [SANDBOX] Plan de Maintenance
-    "hse_docs":   "7b06b2ff-be3d-8370-a7cf-812ff9b00d76",   # 📚 [SANDBOX] Documentation & HSE
+    "hse_docs":      "7b06b2ff-be3d-8370-a7cf-812ff9b00d76",   # 📚 [SANDBOX] Documentation & HSE
+    "decisions_sophie": "3ac6b2ff-be3d-807b-bfa4-de9373f0a60c",  # 📝 [SANDBOX] Historique Décisions Sophie
 }
 
 
@@ -495,6 +496,67 @@ def create_intervention(data: dict) -> dict:
         body["properties"]["Priorité"] = {"select": {"name": data["priorite"]}}
     if data.get("loto_requis"):
         body["properties"]["Procédure LOTO requise"] = {"select": {"name": data["loto_requis"]}}
+
+    resp = requests.post(url, headers=_headers(), json=body, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+# ── CRÉER UNE DÉCISION SOPHIE (POST) ──────────────────────────────────────────
+
+def create_decision(data: dict) -> dict:
+    """
+    Enregistre une décision de simulation d'impact dans la base Notion Sophie.
+    Entrée en lecture seule une fois créée (pas de fonction update).
+
+    Champs attendus dans `data` :
+        equipement     (str)   — ex: "P-17"
+        date_heure     (str)   — ISO 8601, ex: "2026-08-28T14:30:00"
+        rul_jours      (float) — RUL au moment de la décision (jours)
+        temperature    (float) — température capteur (°C)
+        vibrations     (float) — vibration capteur (mm/s)
+        scenario       (str)   — "Maintenance immédiate" | "Report 48h" | "Surveillance renforcée"
+        risque_pct     (float) — risque estimé (%)
+        impact_eur     (float) — impact financier estimé (€)
+        decision       (str)   — "Intervention maintenue" | "Reportée"
+        resultat_reel  (str)   — "Panne évitée" | "Survenue" | "En attente" (optionnel)
+        commentaire    (str)   — commentaire libre du manager (optionnel)
+    """
+    url = f"{NOTION_BASE_URL}/pages"
+
+    body = {
+        "parent": {"database_id": DB_IDS["decisions_sophie"]},
+        "properties": {
+            "Équipement": {
+                "title": [{"text": {"content": data.get("equipement", "P-17")}}]
+            },
+            "Scénario simulé": {
+                "rich_text": [{"text": {"content": data.get("scenario", "")}}]
+            },
+            "Décision prise": {
+                "select": {"name": data.get("decision", "Intervention maintenue")}
+            },
+        },
+    }
+
+    if data.get("date_heure"):
+        body["properties"]["Date / Heure"] = {"date": {"start": data["date_heure"]}}
+    if data.get("rul_jours") is not None:
+        body["properties"]["RUL (jours)"] = {"number": float(data["rul_jours"])}
+    if data.get("temperature") is not None:
+        body["properties"]["Température (°C)"] = {"number": float(data["temperature"])}
+    if data.get("vibrations") is not None:
+        body["properties"]["Vibrations (mm/s)"] = {"number": float(data["vibrations"])}
+    if data.get("risque_pct") is not None:
+        body["properties"]["Risque estimé (%)"] = {"number": float(data["risque_pct"])}
+    if data.get("impact_eur") is not None:
+        body["properties"]["Impact estimé (€)"] = {"number": float(data["impact_eur"])}
+    if data.get("resultat_reel"):
+        body["properties"]["Résultat réel"] = {"select": {"name": data["resultat_reel"]}}
+    if data.get("commentaire"):
+        body["properties"]["Commentaire"] = {
+            "rich_text": [{"text": {"content": data["commentaire"]}}]
+        }
 
     resp = requests.post(url, headers=_headers(), json=body, timeout=10)
     resp.raise_for_status()
