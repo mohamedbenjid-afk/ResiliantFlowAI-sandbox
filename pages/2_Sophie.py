@@ -280,6 +280,29 @@ with tab1:
         f'</div>', unsafe_allow_html=True,
     )
 
+    # ── Enregistrement de la décision (US-S7) ────────────────────────────────
+    st.markdown("---")
+    if st.button("💾 Enregistrer ma décision", use_container_width=True):
+        try:
+            decision_label = "Intervention maintenue" if jours_report == 0 else "Reportée"
+            scenario_label = "Intervention immédiate" if jours_report == 0 else f"Report {jours_report}h"
+            nc.create_decision({
+                "equipement":    "P-17",
+                "date_heure":    datetime.datetime.now().isoformat(),
+                "rul_jours":     c_rul,
+                "temperature":   round(float(c_temp), 1),
+                "vibrations":    round(float(c_vib), 2),
+                "scenario":      scenario_label,
+                "risque_pct":    risque,
+                "impact_eur":    impact,
+                "decision":      decision_label,
+                "resultat_reel": "En attente",
+                "commentaire":   f"RUL projeté {rul_projete}h · Coût intervention {cout_intervention:,}€ · {recommandation}",
+            })
+            st.success(f"✅ Décision enregistrée — {decision_label}")
+        except Exception as e:
+            st.error(f"❌ Erreur lors de l'enregistrement : {e}")
+
     st.markdown("---")
     if st.button("▶️ Lancer l'analyse d'impact IA", use_container_width=True, type="primary"):
         st.session_state.running = False
