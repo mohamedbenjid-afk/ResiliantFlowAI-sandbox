@@ -11,6 +11,7 @@ import streamlit as st
 import notion_client as nc
 from agents.agent_lionel import run_agent_lionel
 from shared_state import COMMON_CSS, init_session_state, update_sensors
+from p17_context import P17_CONTEXT
 
 # Lot D — rafraîchissement K0 via fragment si la version de Streamlit le permet
 _HAS_FRAGMENT = hasattr(st, "fragment")
@@ -457,7 +458,8 @@ if tab2 is not None:
         f'⏱ <b>Durée estimée : {duree_est}</b> &nbsp;|&nbsp; '
         f'🔩 Pièces : {pieces_est} &nbsp;|&nbsp; '
         f'👷 {equipe_est} &nbsp;|&nbsp; '
-        f'📦 Kit : casier B-07'
+        f'📦 Kit : casier {P17_CONTEXT["kit_casier"]} &nbsp;|&nbsp; '
+        f'💶 Coût d\'arrêt : {P17_CONTEXT["cout_arret_eur_h"]} €/h'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -528,27 +530,27 @@ if tab2 is not None:
         # Phase 0 — Préparation & EPI
         ("phase", "🦺 Phase 1 — Préparation & EPI"),
         ("step",  "Mettre les EPI : casque, gants anti-coupure, lunettes, chaussures de sécurité"),
-        ("step",  "Récupérer le kit d'intervention P-17 au magasin (casier B-07)"),
+        ("step",  f"Récupérer le kit d'intervention P-17 au magasin (casier {P17_CONTEXT['kit_casier']})"),
         ("step",  "Vérifier la disponibilité des pièces requises en stock"),
         ("step",  "Informer le manager Sophie de l'arrêt planifié"),
         # Phase 1 — LOTO
         ("phase", "🔒 Phase 2 — Consignation LOTO"),
-        ("step",  "Isoler l'alimentation électrique (disjoncteur Q-17A) et apposer cadenas rouge"),
-        ("step",  "Fermer les vannes d'isolement amont V-17A et aval V-17B"),
-        ("step",  "Purger la pression résiduelle via le point de test PT-17"),
+        ("step",  f"Isoler l'alimentation électrique (disjoncteur {P17_CONTEXT['disjoncteur']}) et apposer cadenas rouge"),
+        ("step",  f"Fermer les vannes d'isolement amont {P17_CONTEXT['vanne_amont']} et aval {P17_CONTEXT['vanne_aval']}"),
+        ("step",  f"Purger la pression résiduelle via le point de test {P17_CONTEXT['point_purge']}"),
         ("step",  "Apposer la plaque de consignation et notifier le poste de contrôle"),
         # Phase 2 — Intervention
         ("phase", "🔧 Phase 3 — Intervention mécanique"),
         ("step",  "Déposer le carter avant (4 vis M12, clé 19)"),
         ("step",  "Extraire le roulement défectueux avec l'extracteur hydraulique"),
         ("step",  "Nettoyer le logement et vérifier l'état de l'arbre"),
-        ("step",  "Monter le nouveau roulement (graissage préalable Mobilux EP2)"),
-        ("step",  "Remonter le carter et vérifier le couple de serrage (45 N·m)"),
+        ("step",  f"Monter le nouveau roulement {P17_CONTEXT['roulement_ref']} (graissage préalable {P17_CONTEXT['graisse']})"),
+        ("step",  f"Remonter le carter et vérifier le couple de serrage ({P17_CONTEXT['couple_carter_nm']} N·m)"),
         # Phase 3 — Remise en service
         ("phase", "✅ Phase 4 — Remise en service"),
         ("step",  "Retirer les consignations LOTO et informer le poste de contrôle"),
         ("step",  "Démarrage progressif et surveillance 15 min (temp, vib, pression)"),
-        ("step",  "Valider les paramètres : T < 70 °C, vib < 1.5 mm/s, P > 3.5 bar"),
+        ("step",  f"Valider les paramètres : T < {P17_CONTEXT['valid_temp_max']} °C, vib < {P17_CONTEXT['valid_vib_max']} mm/s, P > {P17_CONTEXT['valid_pres_min']} bar"),
     ]
 
     if "checklist_steps" not in st.session_state:
