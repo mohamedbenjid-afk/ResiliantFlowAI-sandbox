@@ -83,6 +83,12 @@ div[data-testid="stMetric"] {
 """
 
 
+# ── PARAMÈTRE RUL (Lot C — échelle recalée) ──────────────────────────────────
+# RUL nominal de référence, en JOURS. 90 j est cohérent avec le reste du parc
+# Notion (RUL nominal 1680-2400 h ≈ 70-100 j) et bien plus crédible que 365 j.
+RUL_NOMINAL = 90
+
+
 # ── INITIALISATION & MISE À JOUR DU SESSION STATE ────────────────────────────
 def init_session_state():
     if "history" not in st.session_state:
@@ -91,7 +97,7 @@ def init_session_state():
             "temp": [67.0] * 30,
             "vib":  [0.8]  * 30,
             "pres": [4.4]  * 30,
-            "rul":  [365.0] * 30,
+            "rul":  [float(RUL_NOMINAL)] * 30,
         }
     defaults = {
         "base_temp": 67.0,
@@ -122,8 +128,8 @@ def update_sensors():
         vib_stress  = max(0.0, (c_vib  -  1.0) /  3.0)
         pres_stress = max(0.0, abs(c_pres - 4.5) / 4.0)
         stress = min(1.0, temp_stress * 0.50 + vib_stress * 0.40 + pres_stress * 0.10)
-        # Exposant 3 → Nominal ≈ 70 j  |  Surchauffe ≈ 1 j
-        c_rul  = max(0, int(365 * (1.0 - stress) ** 6))
+        # Exposant 3 sur base 90 j → Normal ≈ 89 j | Intermédiaire ≈ 26 j | Surchauffe ≈ 1 j
+        c_rul  = max(0, int(RUL_NOMINAL * (1.0 - stress) ** 3))
 
         for key, val in zip(["temp", "vib", "pres", "rul"], [c_temp, c_vib, c_pres, c_rul]):
             st.session_state.history[key].append(val)
@@ -139,6 +145,10 @@ def update_sensors():
         c_cur  = st.session_state.base_cur
         c_rul  = st.session_state.history["rul"][-1]
 
-    r_status = "Nominal" if c_rul > 60 else ("Alerte" if c_rul > 2 else "Critique")
-    rul_pct  = float(max(0.0, min(1.0, c_rul / 365.0)))
+    # Seuils recalés (Lot C) : zone Alerte enfin atteignable
+    #   Nominal  : RUL > 45 j
+    #   Alerte   : 3 j < RUL ≤ 45 j
+    #   Critique : RUL ≤ 3 j
+    r_status = "Nominal" if c_rul > 45 else ("Alerte" if c_rul > 3 else "Critique")
+    rul_pct  = float(max(0.0, min(1.0, c_rul / RUL_NOMINAL)))
     return c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_pct

@@ -12,6 +12,9 @@ import notion_client as nc
 from agents.agent_lionel import run_agent_lionel
 from shared_state import COMMON_CSS, init_session_state, update_sensors
 
+# Lot D — rafraîchissement K0 via fragment si la version de Streamlit le permet
+_HAS_FRAGMENT = hasattr(st, "fragment")
+
 # ── PAGE CONFIG ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Lionel — Terrain", page_icon="🔧", layout="wide")
 st.markdown(COMMON_CSS, unsafe_allow_html=True)
@@ -60,6 +63,11 @@ with st.sidebar:
             st.session_state.base_vib  = 0.8
             st.session_state.base_pres = 4.4
 
+    st.markdown("---")
+    _refresh_s = st.slider("⏱ Intervalle rafraîchissement K0 (s)", 1, 5,
+                           int(st.session_state.get("refresh_s", 2)))
+    st.session_state["refresh_s"] = _refresh_s
+
 # ── SENSOR DATA ───────────────────────────────────────────────────────────────
 c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_pct = update_sensors()
 
@@ -78,7 +86,8 @@ tab4 = _tabs[4]
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 0 — K0 SURVEILLANCE
 # ════════════════════════════════════════════════════════════════════════════════
-with tab0:
+def _render_k0():
+    c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_pct = update_sensors()
     st.markdown("## 📡 Surveillance temps réel — Pompe P-17")
 
     # KPI metrics
@@ -99,7 +108,7 @@ with tab0:
     with rul_col:
         st.markdown(f"### ⏱ RUL estimé : **{c_rul} jours**")
         st.progress(rul_pct)
-        if c_rul <= 60:
+        if c_rul <= 45:
             st.markdown(
                 f'<span class="threshold-label">⚠️ Seuil opérationnel franchi — intervention recommandée</span>',
                 unsafe_allow_html=True,
@@ -112,9 +121,9 @@ with tab0:
             unsafe_allow_html=True,
         )
 
-    # AI agent when critical (RUL ≤ 5 j = scénario surchauffe)
-    # L'agent est appelé UNE SEULE FOIS à l'entrée en état critique, puis mis en cache
-    if c_rul <= 5:
+    # AI agent quand la machine passe en état Critique.
+    # L'agent est appelé UNE SEULE FOIS à l'entrée en état critique, puis mis en cache.
+    if r_status == "Critique":
         if st.session_state.get("_agent_status") != "Critique":
             with st.spinner("🤖 Analyse IA en cours..."):
                 st.session_state["_agent_reco"] = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
@@ -197,6 +206,14 @@ with tab0:
         )
         col.plotly_chart(fig, use_container_width=True)
 
+
+# Rendu K0 — fragment live : rafraîchit uniquement ce bloc, la page ne saute plus
+if _HAS_FRAGMENT and st.session_state.running:
+    _render_k0 = st.fragment(run_every=f"{_refresh_s}s")(_render_k0)
+
+with tab0:
+    _render_k0()
+
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 1 — K1 BRIEFING
 # ════════════════════════════════════════════════════════════════════════════════
@@ -215,13 +232,13 @@ if tab1 is not None:
     def _prescription(statut: str, rul: float, nom: str, is_p17: bool,
                       temp: float = None, vib: float = None) -> str:
         """Génère une prescription courte adaptée au contexte de la machine."""
-        if statut == "Critique" or rul <= 2:
+        if statut == "Critique" or rul <= 3:
             if is_p17 and temp and temp > 75:
                 return "⚡ Surchauffe critique — déclencher procédure K2 immédiatement, arrêt production"
             if is_p17 and vib and vib > 2.5:
                 return "⚡ Vibration critique — arrêt machine et inspection roulements avant remise en route"
             return f"⚡ Intervention immédiate sur {nom} — RUL {rul} j, risque panne imminente"
-        elif statut == "Alerte" or rul <= 20:
+        elif statut == "Alerte" or rul <= 45:
             if is_p17:
                 return f"⏰ Planifier intervention P-17 sous 48h — vérifier graissage et circuit refroidissement"
             return f"⏰ Planifier maintenance {nom} cette semaine — RUL {rul} j"
@@ -255,9 +272,9 @@ if tab1 is not None:
                 statut = m.get("statut") or "Nominal"
                 is_p17 = "P-17" in mid or "P-17" in nom
 
-                if statut == "Critique" or rul <= 2:
+                if statut == "Critique" or rul <= 3:
                     bg, border, icon = "#fee2e2", "#ef4444", "🔴"
-                elif statut == "Alerte" or rul <= 20:
+                elif statut == "Alerte" or rul <= 45:
                     bg, border, icon = "#fef3c7", "#f59e0b", "🟠"
                 elif statut == "Hors service":
                     bg, border, icon = "#f3f4f6", "#6b7280", "⚫"
@@ -404,7 +421,7 @@ if tab1 is not None:
                 )
 
 # ════════════════════════════════════════════════════════════════════════════════
-# TAB 2 — K2 PROCÉDURE (visible uniquement si Alerte ou Critique)
+# TAB 2 — K2 PROCÉDURE
 # ════════════════════════════════════════════════════════════════════════════════
 if tab2 is not None:
   with tab2:
@@ -652,12 +669,14 @@ if tab3 is not None:
             machine_label = f_machine.split("(")[0].strip()
             machine_id    = f_machine.split("(")[-1].rstrip(")") if "(" in f_machine else f_machine
             today         = datetime.date.today().isoformat()
+            # Titre descriptif (Lot A-5) : évite les doublons génériques dans Notion
+            _resume = (f_actions or "intervention").strip().split("\n")[0][:40]
             payload = {
-                "titre":        f"Intervention {machine_id} — {today}",
+                "titre":        f"{f_type} {machine_id} — {_resume} ({today})",
                 "machine":      machine_label,
                 "type":         f_type,
                 "statut":       f_statut,
-                "technicien":   "Lionel B.",
+                "technicien":   "Lionel Dumont",
                 "date":         today,
                 "date_realisee": today,
                 "duree_reelle": 0.0,     # non demandé — valeur neutre
@@ -839,7 +858,8 @@ if tab4 is not None:
             icon = "🔴" if score >= 60 else ("🟡" if score >= 30 else "🟢")
             st.markdown(f"{i}. {icon} **{m.get('nom')}** — Score {score}/100 — RUL {m.get('rul_jours','?')} j")
 
-# ── AUTO-REFRESH (K0 seulement) ───────────────────────────────────────────────
-if st.session_state.running:
-    time.sleep(1)
+# ── AUTO-REFRESH — repli uniquement si les fragments ne sont pas supportés ────
+# (Lot D) Avec fragment, seul le bloc K0 se rafraîchit → plus de saut de page.
+if (not _HAS_FRAGMENT) and st.session_state.running:
+    time.sleep(_refresh_s)
     st.rerun()
