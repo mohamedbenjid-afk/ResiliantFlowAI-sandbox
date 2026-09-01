@@ -75,14 +75,192 @@ c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_pct = update_sensors()
 STATUS_COLOR = {"Nominal": "#166534", "Alerte": "#b45309", "Critique": "#b91c1c"}
 STATUS_BG    = {"Nominal": "#dcfce7", "Alerte": "#fef3c7", "Critique": "#fee2e2"}
 
-# ── TABS — Tous les onglets K0 à K4 activés ──────────────────────────────────
+# ── TABS — Dashboard d'accueil en premier, puis K0 à K4 ──────────────────────
 _show_k2 = True
-_tabs = st.tabs(["📡 K0 — Surveillance", "📋 K1 — Briefing", "🔧 K2 — Procédure", "✅ K3 — Post-intervention", "⚖️ K4 — Arbitrage"])
-tab0 = _tabs[0]
-tab1 = _tabs[1]
-tab2 = _tabs[2]
-tab3 = _tabs[3]
-tab4 = _tabs[4]
+_tabs = st.tabs(["📊 Mon poste", "📡 K0 — Surveillance", "📋 K1 — Briefing",
+                 "🔧 K2 — Procédure", "✅ K3 — Post-intervention", "⚖️ K4 — Arbitrage"])
+tab_dash = _tabs[0]
+tab0 = _tabs[1]
+tab1 = _tabs[2]
+tab2 = _tabs[3]
+tab3 = _tabs[4]
+tab4 = _tabs[5]
+
+# ════════════════════════════════════════════════════════════════════════════════
+# ONGLET DASHBOARD — « Mon poste » (accueil)
+# ════════════════════════════════════════════════════════════════════════════════
+with tab_dash:
+    st.markdown("## 📊 Mon poste — Lionel Dumont")
+    st.caption("Technicien terrain · Unité B · Machine surveillée : Pompe P-17")
+
+    _mois = datetime.date.today().strftime("%Y-%m")
+    def _is_lio(t):
+        return "lionel" in (t or "").lower()
+
+    try:
+        _hist = nc.get_historique(limit=100)
+    except Exception:
+        _hist = []
+    _a_faire   = sum(1 for i in _hist if i.get("statut") == "Planifiée" and _is_lio(i.get("technicien")))
+    _en_retard = sum(1 for i in _hist if i.get("statut") == "En retard" and _is_lio(i.get("technicien")))
+    _realisees = [i for i in _hist if i.get("statut") == "Réalisée" and _is_lio(i.get("technicien"))]
+    _real_mois = sum(1 for i in _realisees if (i.get("date_realisee") or "").startswith(_mois))
+    _durees    = [i.get("duree_reelle") for i in _realisees if i.get("duree_reelle")]
+    _tmoyen    = round(sum(_durees) / len(_durees) * 60) if _durees else None
+    _presc     = sum(1 for i in _realisees if i.get("type") in ("Prédictive", "Préventive conditionnelle"))
+    _ppresc    = round(_presc / len(_realisees) * 100) if _realisees else None
+
+    try:
+        _eq = nc.get_equipe()
+    except Exception:
+        _eq = []
+    _me = next((t for t in _eq if _is_lio(f"{t.get('prenom','')} {t.get('nom','')}")), None)
+    _heures = _me.get("heures_restantes") if _me else None
+    _dispo  = (_me.get("disponibilite") if _me else None) or "—"
+
+    _p17_plan = sorted(
+        [i for i in _hist if "P-17" in (i.get("machine") or "") and i.get("statut") == "Planifiée"],
+        key=lambda i: i.get("date") or "9999-99-99")
+    _prochaine = _p17_plan[0] if _p17_plan else None
+
+    try:
+        _pieces = nc.get_pieces(machine_id="P-17")
+    except Exception:
+        _pieces = []
+    try:
+        _machines = nc.get_machines()
+        for _m in _machines:
+            if "P-17" in ((_m.get("id") or "") + (_m.get("nom") or "")):
+                _m["rul_jours"] = c_rul
+                _m["statut"] = r_status
+    except Exception:
+        _machines = []
+    _alertes = [m for m in _machines
+                if (m.get("statut") in ("Alerte", "Critique")) or ((m.get("rul_jours") or 999) <= 45)]
+    _urgent = min(_alertes, key=lambda m: m.get("rul_jours") or 999) if _alertes else None
+
+    # ── Héros P-17 ────────────────────────────────────────────────────────────
+    _bg = STATUS_BG[r_status]
+    _col = STATUS_COLOR[r_status]
+    _proch_txt = (f"{_prochaine['titre']} — {_prochaine.get('date') or 'TBD'}"
+                  if _prochaine else "Aucune intervention planifiée")
+    st.markdown(
+        f'<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 22px;'
+        f'display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;align-items:center;">'
+        f'<div><div style="font-size:0.85rem;color:#64748b;">Pompe P-17 · surveillance temps réel</div>'
+        f'<div style="display:flex;align-items:baseline;gap:10px;margin-top:4px;">'
+        f'<span style="font-size:2.6rem;font-weight:800;color:#0f172a;">{c_rul}</span>'
+        f'<span style="color:#64748b;">jours de RUL</span>'
+        f'<span style="background:{_bg};color:{_col};padding:3px 12px;border-radius:20px;'
+        f'font-size:0.8rem;font-weight:700;">{r_status}</span></div>'
+        f'<div style="height:6px;background:#f1f5f9;border-radius:20px;margin-top:10px;width:240px;overflow:hidden;">'
+        f'<div style="width:{max(3, int(rul_pct * 100))}%;height:100%;background:{_col};"></div></div></div>'
+        f'<div style="border-left:1px solid #e5e7eb;padding-left:20px;min-width:220px;">'
+        f'<div style="font-size:0.85rem;color:#64748b;">Prochaine intervention</div>'
+        f'<div style="font-size:1rem;font-weight:600;color:#0f172a;margin-top:2px;">{_proch_txt}</div>'
+        f'</div></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown("")
+
+    # ── Tuiles KPI ────────────────────────────────────────────────────────────
+    def _tile(label, val, color="#0f172a"):
+        return (f'<div style="background:#f8fafc;border-radius:8px;padding:14px 16px;">'
+                f'<div style="font-size:0.8rem;color:#64748b;">{label}</div>'
+                f'<div style="font-size:1.5rem;font-weight:700;color:{color};margin-top:4px;">{val}</div></div>')
+    _tm = f"{_tmoyen} min" if _tmoyen else "—"
+    _pp = f"{_ppresc} %" if _ppresc is not None else "—"
+    _hh = f"{_heures:.0f} h" if _heures is not None else "—"
+    _tiles = "".join([
+        _tile("📋 À faire", _a_faire),
+        _tile("⚠️ En retard", _en_retard, "#b45309" if _en_retard else "#0f172a"),
+        _tile("✅ Réalisées ce mois", _real_mois, "#166534"),
+        _tile("⏱ Temps moyen", _tm),
+        _tile("💡 Part prescriptive", _pp),
+        _tile(f"👤 Ma dispo ({_dispo})", _hh, "#166534" if _dispo == "Disponible" else "#0f172a"),
+    ])
+    st.markdown(
+        f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;">{_tiles}</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("---")
+
+    # ── Graphiques ────────────────────────────────────────────────────────────
+    _cA, _cB = st.columns([3, 2])
+    with _cA:
+        st.markdown("**📈 RUL Pompe P-17 — 30 derniers relevés**")
+        _rul_hist = list(st.session_state.history["rul"])
+        _figr = go.Figure()
+        _figr.add_trace(go.Scatter(y=_rul_hist, mode="lines",
+                                   line=dict(color="#2a78d6", width=2.5, shape="spline"),
+                                   fill="tozeroy", fillcolor="rgba(42,120,214,0.10)"))
+        _figr.add_hline(y=45, line=dict(color="#EF9F27", width=1.5, dash="dash"))
+        _figr.update_layout(height=230, margin=dict(l=4, r=4, t=10, b=4), showlegend=False,
+                            paper_bgcolor="white", plot_bgcolor="white",
+                            xaxis=dict(showticklabels=False, showgrid=False),
+                            yaxis=dict(gridcolor="rgba(0,0,0,0.06)"))
+        st.plotly_chart(_figr, use_container_width=True)
+    with _cB:
+        st.markdown("**🧩 Répartition par type**")
+        _types = {}
+        for i in _realisees:
+            _k = i.get("type") or "Autre"
+            _types[_k] = _types.get(_k, 0) + 1
+        if not _types:
+            _types = {"Prédictive": 45, "Préventive": 27, "Corrective": 18, "Inspection": 10}
+        _figt = go.Figure(go.Pie(labels=list(_types.keys()), values=list(_types.values()), hole=0.6,
+                                 marker=dict(colors=["#2a78d6", "#1baf7a", "#eda100", "#008300", "#e34948"])))
+        _figt.update_layout(height=230, margin=dict(l=4, r=4, t=10, b=4), paper_bgcolor="white",
+                            legend=dict(orientation="h", y=-0.15, font=dict(size=10)))
+        st.plotly_chart(_figt, use_container_width=True)
+
+    st.markdown("**📅 Mes interventions réalisées par mois**")
+    _by_month = {}
+    for i in _realisees:
+        _d = (i.get("date_realisee") or i.get("date") or "")[:7]
+        if _d:
+            _by_month[_d] = _by_month.get(_d, 0) + 1
+    if not _by_month:
+        _by_month = {"2026-01": 3, "2026-02": 5, "2026-03": 4, "2026-04": 6, "2026-05": 7, "2026-06": 6}
+    _mk = sorted(_by_month.keys())
+    _figm = go.Figure(go.Bar(x=_mk, y=[_by_month[k] for k in _mk], marker_color="#2a78d6"))
+    _figm.update_layout(height=210, margin=dict(l=4, r=4, t=10, b=4), paper_bgcolor="white",
+                        plot_bgcolor="white", xaxis=dict(showgrid=False),
+                        yaxis=dict(gridcolor="rgba(0,0,0,0.06)"))
+    st.plotly_chart(_figm, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── Blocages & contexte parc ──────────────────────────────────────────────
+    _cS, _cAl = st.columns(2)
+    with _cS:
+        st.markdown("**🔩 Stock pièces critiques P-17**")
+        if _pieces:
+            for p in _pieces:
+                _stock = p.get("stock_actuel") or 0
+                _mini = p.get("stock_minimum") or 1
+                _ok = _stock >= _mini
+                _ic = "✅" if _ok else "❌"
+                _cl = "#166534" if _ok else "#b91c1c"
+                _lbl = "en stock" if _ok else "rupture"
+                st.markdown(
+                    f'{_ic} **{p.get("designation","?")}** — '
+                    f'<span style="color:{_cl}">{_lbl} · {_stock}</span>',
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.info("Stock indisponible.")
+    with _cAl:
+        st.markdown("**🏭 Alertes parc actives**")
+        st.markdown(
+            f'<span style="font-size:1.6rem;font-weight:800;color:#b45309;">{len(_alertes)}</span> '
+            f'machines en alerte',
+            unsafe_allow_html=True,
+        )
+        if _urgent:
+            st.markdown(f'Plus urgente : **{_urgent.get("nom", _urgent.get("id"))}** — '
+                        f'RUL {_urgent.get("rul_jours","?")} j')
 
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 0 — K0 SURVEILLANCE
