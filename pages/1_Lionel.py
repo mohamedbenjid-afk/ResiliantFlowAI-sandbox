@@ -236,19 +236,22 @@ with tab_dash:
     _cS, _cAl = st.columns(2)
     with _cS:
         st.markdown("**🔩 Stock pièces critiques P-17**")
-        if _pieces:
-            for p in _pieces:
+        _crit = [p for p in _pieces if (p.get("stock_actuel") or 0) < (p.get("stock_minimum") or 1)]
+        if _crit:
+            for p in _crit:
                 _stock = p.get("stock_actuel") or 0
                 _mini = p.get("stock_minimum") or 1
-                _ok = _stock >= _mini
-                _ic = "✅" if _ok else "❌"
-                _cl = "#166534" if _ok else "#b91c1c"
-                _lbl = "en stock" if _ok else "rupture"
+                if _stock <= 0:
+                    _ic, _cl, _lbl = "❌", "#b91c1c", "rupture"
+                else:
+                    _ic, _cl, _lbl = "🟠", "#b45309", "sous seuil"
                 st.markdown(
                     f'{_ic} **{p.get("designation","?")}** — '
-                    f'<span style="color:{_cl}">{_lbl} · {_stock}</span>',
+                    f'<span style="color:{_cl}">{_lbl} · {_stock}/{_mini}</span>',
                     unsafe_allow_html=True,
                 )
+        elif _pieces:
+            st.success("✅ Aucune pièce sous seuil.")
         else:
             st.info("Stock indisponible.")
     with _cAl:
