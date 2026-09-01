@@ -139,131 +139,179 @@ with tab_dash:
                 if (m.get("statut") in ("Alerte", "Critique")) or ((m.get("rul_jours") or 999) <= 45)]
     _urgent = min(_alertes, key=lambda m: m.get("rul_jours") or 999) if _alertes else None
 
+    # ── Style dashboard (proche de la charte visuelle) ────────────────────────
+    st.markdown("""
+    <style>
+    .rf-hero{background:#ffffff;border:1px solid #e6e8ec;border-radius:14px;padding:20px 24px;
+      display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;align-items:center;}
+    .rf-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;}
+    .rf-kpi{background:#f8fafc;border:1px solid #eef1f5;border-radius:12px;padding:14px 16px;}
+    .rf-kpi .l{font-size:0.78rem;color:#64748b;}
+    .rf-kpi .v{font-size:1.55rem;font-weight:700;margin-top:6px;line-height:1;}
+    .rf-lab{font-size:0.82rem;color:#475569;font-weight:600;margin-bottom:4px;}
+    .rf-row{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-top:1px solid #f1f5f9;}
+    .rf-pill{font-size:0.72rem;padding:3px 10px;border-radius:20px;font-weight:600;}
+    </style>
+    """, unsafe_allow_html=True)
+
     # ── Héros P-17 ────────────────────────────────────────────────────────────
     _bg = STATUS_BG[r_status]
     _col = STATUS_COLOR[r_status]
-    _proch_txt = (f"{_prochaine['titre']} — {_prochaine.get('date') or 'TBD'}"
-                  if _prochaine else "Aucune intervention planifiée")
+    _proch_txt = _prochaine['titre'] if _prochaine else "Aucune intervention planifiée"
+    _proch_date = f"📅 {_prochaine.get('date')}" if _prochaine and _prochaine.get('date') else ""
     st.markdown(
-        f'<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 22px;'
-        f'display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;align-items:center;">'
-        f'<div><div style="font-size:0.85rem;color:#64748b;">Pompe P-17 · surveillance temps réel</div>'
-        f'<div style="display:flex;align-items:baseline;gap:10px;margin-top:4px;">'
-        f'<span style="font-size:2.6rem;font-weight:800;color:#0f172a;">{c_rul}</span>'
+        f'<div class="rf-hero">'
+        f'<div><div style="font-size:0.82rem;color:#64748b;">Pompe P-17 · surveillance temps réel</div>'
+        f'<div style="display:flex;align-items:baseline;gap:10px;margin-top:6px;">'
+        f'<span style="font-size:2.8rem;font-weight:800;color:#0f172a;line-height:1;">{c_rul}</span>'
         f'<span style="color:#64748b;">jours de RUL</span>'
-        f'<span style="background:{_bg};color:{_col};padding:3px 12px;border-radius:20px;'
-        f'font-size:0.8rem;font-weight:700;">{r_status}</span></div>'
-        f'<div style="height:6px;background:#f1f5f9;border-radius:20px;margin-top:10px;width:240px;overflow:hidden;">'
+        f'<span class="rf-pill" style="background:{_bg};color:{_col};">{r_status}</span></div>'
+        f'<div style="height:6px;background:#eef1f5;border-radius:20px;margin-top:12px;width:250px;overflow:hidden;">'
         f'<div style="width:{max(3, int(rul_pct * 100))}%;height:100%;background:{_col};"></div></div></div>'
-        f'<div style="border-left:1px solid #e5e7eb;padding-left:20px;min-width:220px;">'
-        f'<div style="font-size:0.85rem;color:#64748b;">Prochaine intervention</div>'
-        f'<div style="font-size:1rem;font-weight:600;color:#0f172a;margin-top:2px;">{_proch_txt}</div>'
+        f'<div style="border-left:1px solid #eef1f5;padding-left:22px;min-width:230px;">'
+        f'<div style="font-size:0.82rem;color:#64748b;">Prochaine intervention</div>'
+        f'<div style="font-size:1rem;font-weight:600;color:#0f172a;margin-top:3px;">{_proch_txt}</div>'
+        f'<div style="font-size:0.8rem;color:#64748b;margin-top:2px;">{_proch_date}</div>'
         f'</div></div>',
         unsafe_allow_html=True,
     )
     st.markdown("")
 
     # ── Tuiles KPI ────────────────────────────────────────────────────────────
-    def _tile(label, val, color="#0f172a"):
-        return (f'<div style="background:#f8fafc;border-radius:8px;padding:14px 16px;">'
-                f'<div style="font-size:0.8rem;color:#64748b;">{label}</div>'
-                f'<div style="font-size:1.5rem;font-weight:700;color:{color};margin-top:4px;">{val}</div></div>')
+    def _tile(icon, label, val, color="#0f172a"):
+        return (f'<div class="rf-kpi"><div class="l">{icon} {label}</div>'
+                f'<div class="v" style="color:{color}">{val}</div></div>')
     _tm = f"{_tmoyen} min" if _tmoyen else "—"
     _pp = f"{_ppresc} %" if _ppresc is not None else "—"
     _hh = f"{_heures:.0f} h" if _heures is not None else "—"
     _tiles = "".join([
-        _tile("📋 À faire", _a_faire),
-        _tile("⚠️ En retard", _en_retard, "#b45309" if _en_retard else "#0f172a"),
-        _tile("✅ Réalisées ce mois", _real_mois, "#166534"),
-        _tile("⏱ Temps moyen", _tm),
-        _tile("💡 Part prescriptive", _pp),
-        _tile(f"👤 Ma dispo ({_dispo})", _hh, "#166534" if _dispo == "Disponible" else "#0f172a"),
+        _tile("📋", "À faire", _a_faire),
+        _tile("⚠️", "En retard", _en_retard, "#b45309" if _en_retard else "#0f172a"),
+        _tile("✅", "Réalisées ce mois", _real_mois, "#166534"),
+        _tile("⏱", "Temps moyen", _tm),
+        _tile("💡", "Part prescriptive", _pp, "#2563eb"),
+        _tile("👤", f"Ma dispo · {_dispo}", _hh, "#166534" if _dispo == "Disponible" else "#0f172a"),
     ])
-    st.markdown(
-        f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;">{_tiles}</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(f'<div class="rf-kpis">{_tiles}</div>', unsafe_allow_html=True)
+    st.markdown("")
 
-    st.markdown("---")
+    # ── Thème Plotly commun ───────────────────────────────────────────────────
+    def _theme(fig, h):
+        fig.update_layout(height=h, margin=dict(l=8, r=8, t=8, b=8),
+                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                          font=dict(family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif",
+                                    size=12, color="#64748b"), showlegend=False)
+        fig.update_xaxes(showgrid=False, zeroline=False, showline=False, ticks="",
+                         tickfont=dict(color="#94a3b8", size=11))
+        fig.update_yaxes(gridcolor="#eef1f5", zeroline=False, showline=False, ticks="",
+                         tickfont=dict(color="#94a3b8", size=11))
+        return fig
+    _CFG = {"displayModeBar": False}
 
-    # ── Graphiques ────────────────────────────────────────────────────────────
-    _cA, _cB = st.columns([3, 2])
-    with _cA:
-        st.markdown("**📈 RUL Pompe P-17 — 30 derniers relevés**")
+    # ── Courbe RUL (pleine largeur) ───────────────────────────────────────────
+    with st.container(border=True):
+        st.markdown('<div class="rf-lab">📈 RUL Pompe P-17 — 30 derniers relevés</div>', unsafe_allow_html=True)
         _rul_hist = list(st.session_state.history["rul"])
         _figr = go.Figure()
         _figr.add_trace(go.Scatter(y=_rul_hist, mode="lines",
                                    line=dict(color="#2a78d6", width=2.5, shape="spline"),
-                                   fill="tozeroy", fillcolor="rgba(42,120,214,0.10)"))
-        _figr.add_hline(y=45, line=dict(color="#EF9F27", width=1.5, dash="dash"))
-        _figr.update_layout(height=230, margin=dict(l=4, r=4, t=10, b=4), showlegend=False,
-                            paper_bgcolor="white", plot_bgcolor="white",
-                            xaxis=dict(showticklabels=False, showgrid=False),
-                            yaxis=dict(gridcolor="rgba(0,0,0,0.06)"))
-        st.plotly_chart(_figr, use_container_width=True)
+                                   fill="tozeroy", fillcolor="rgba(42,120,214,0.08)",
+                                   hovertemplate="%{y:.0f} j<extra></extra>"))
+        _figr.add_hline(y=45, line=dict(color="#f59e0b", width=1.5, dash="dot"),
+                        annotation_text="seuil 45 j", annotation_position="top left",
+                        annotation_font=dict(size=10, color="#b45309"))
+        _theme(_figr, 200)
+        _figr.update_xaxes(showticklabels=False)
+        st.plotly_chart(_figr, use_container_width=True, config=_CFG)
+
+    # ── Interventions (6 derniers mois) + Répartition par type ────────────────
+    _cA, _cB = st.columns(2)
+    with _cA:
+        with st.container(border=True):
+            st.markdown('<div class="rf-lab">📅 Interventions réalisées — 6 derniers mois</div>', unsafe_allow_html=True)
+            _MOIS_FR = ["", "janv.", "févr.", "mars", "avr.", "mai", "juin",
+                        "juil.", "août", "sept.", "oct.", "nov.", "déc."]
+            _tday = datetime.date.today()
+            _months = []
+            for _k in range(5, -1, -1):
+                _mm, _yy = _tday.month - _k, _tday.year
+                while _mm <= 0:
+                    _mm += 12
+                    _yy -= 1
+                _months.append((f"{_yy:04d}-{_mm:02d}", f"{_MOIS_FR[_mm]} {str(_yy)[2:]}"))
+            _counts = {k: 0 for k, _ in _months}
+            for i in _realisees:
+                _d = (i.get("date_realisee") or i.get("date") or "")[:7]
+                if _d in _counts:
+                    _counts[_d] += 1
+            _figm = go.Figure(go.Bar(x=[lab for _, lab in _months],
+                                     y=[_counts[k] for k, _ in _months],
+                                     marker_color="#2a78d6", marker_line_width=0,
+                                     hovertemplate="%{y} interv.<extra></extra>"))
+            _theme(_figm, 210)
+            _figm.update_layout(bargap=0.5)
+            _figm.update_yaxes(dtick=1, rangemode="tozero")
+            st.plotly_chart(_figm, use_container_width=True, config=_CFG)
     with _cB:
-        st.markdown("**🧩 Répartition par type**")
-        _types = {}
-        for i in _realisees:
-            _k = i.get("type") or "Autre"
-            _types[_k] = _types.get(_k, 0) + 1
-        if not _types:
-            _types = {"Prédictive": 45, "Préventive": 27, "Corrective": 18, "Inspection": 10}
-        _figt = go.Figure(go.Pie(labels=list(_types.keys()), values=list(_types.values()), hole=0.6,
-                                 marker=dict(colors=["#2a78d6", "#1baf7a", "#eda100", "#008300", "#e34948"])))
-        _figt.update_layout(height=230, margin=dict(l=4, r=4, t=10, b=4), paper_bgcolor="white",
-                            legend=dict(orientation="h", y=-0.15, font=dict(size=10)))
-        st.plotly_chart(_figt, use_container_width=True)
+        with st.container(border=True):
+            st.markdown('<div class="rf-lab">🧩 Répartition par type</div>', unsafe_allow_html=True)
+            _types = {}
+            for i in _realisees:
+                _k = i.get("type") or "Autre"
+                _types[_k] = _types.get(_k, 0) + 1
+            if not _types:
+                _types = {"Prédictive": 5, "Préventive conditionnelle": 2,
+                          "Corrective": 2, "Préventive systématique": 1}
+            _tot = sum(_types.values()) or 1
+            _figt = go.Figure(go.Pie(labels=list(_types.keys()), values=list(_types.values()),
+                                     hole=0.62, sort=False,
+                                     marker=dict(colors=["#2a78d6", "#1baf7a", "#eda100", "#e34948", "#8b5cf6"],
+                                                 line=dict(color="#ffffff", width=2)),
+                                     textinfo="none",
+                                     hovertemplate="%{label} : %{value} (%{percent})<extra></extra>"))
+            _figt.update_layout(height=210, margin=dict(l=8, r=8, t=8, b=8),
+                                paper_bgcolor="rgba(0,0,0,0)",
+                                font=dict(size=11, color="#64748b"),
+                                legend=dict(orientation="h", y=-0.08, x=0.5, xanchor="center"),
+                                annotations=[dict(text=str(_tot), x=0.5, y=0.5, font_size=22,
+                                                  showarrow=False, font_color="#0f172a")])
+            st.plotly_chart(_figt, use_container_width=True, config=_CFG)
 
-    st.markdown("**📅 Mes interventions réalisées par mois**")
-    _by_month = {}
-    for i in _realisees:
-        _d = (i.get("date_realisee") or i.get("date") or "")[:7]
-        if _d:
-            _by_month[_d] = _by_month.get(_d, 0) + 1
-    if not _by_month:
-        _by_month = {"2026-01": 3, "2026-02": 5, "2026-03": 4, "2026-04": 6, "2026-05": 7, "2026-06": 6}
-    _mk = sorted(_by_month.keys())
-    _figm = go.Figure(go.Bar(x=_mk, y=[_by_month[k] for k in _mk], marker_color="#2a78d6"))
-    _figm.update_layout(height=210, margin=dict(l=4, r=4, t=10, b=4), paper_bgcolor="white",
-                        plot_bgcolor="white", xaxis=dict(showgrid=False),
-                        yaxis=dict(gridcolor="rgba(0,0,0,0.06)"))
-    st.plotly_chart(_figm, use_container_width=True)
-
-    st.markdown("---")
-
-    # ── Blocages & contexte parc ──────────────────────────────────────────────
+    # ── Stock critique + Alertes parc ─────────────────────────────────────────
     _cS, _cAl = st.columns(2)
     with _cS:
-        st.markdown("**🔩 Stock pièces critiques P-17**")
-        _crit = [p for p in _pieces if (p.get("stock_actuel") or 0) < (p.get("stock_minimum") or 1)]
-        if _crit:
-            for p in _crit:
-                _stock = p.get("stock_actuel") or 0
-                _mini = p.get("stock_minimum") or 1
-                if _stock <= 0:
-                    _ic, _cl, _lbl = "❌", "#b91c1c", "rupture"
-                else:
-                    _ic, _cl, _lbl = "🟠", "#b45309", "sous seuil"
-                st.markdown(
-                    f'{_ic} **{p.get("designation","?")}** — '
-                    f'<span style="color:{_cl}">{_lbl} · {_stock}/{_mini}</span>',
-                    unsafe_allow_html=True,
-                )
-        elif _pieces:
-            st.success("✅ Aucune pièce sous seuil.")
-        else:
-            st.info("Stock indisponible.")
+        with st.container(border=True):
+            st.markdown('<div class="rf-lab">🔩 Stock pièces critiques P-17</div>', unsafe_allow_html=True)
+            _crit = [p for p in _pieces if (p.get("stock_actuel") or 0) < (p.get("stock_minimum") or 1)]
+            if _crit:
+                for p in _crit:
+                    _stock = p.get("stock_actuel") or 0
+                    _mini = p.get("stock_minimum") or 1
+                    if _stock <= 0:
+                        _ic, _pbg, _pcl, _lbl = "❌", "#fee2e2", "#b91c1c", "rupture"
+                    else:
+                        _ic, _pbg, _pcl, _lbl = "🟠", "#fef3c7", "#b45309", "sous seuil"
+                    st.markdown(
+                        f'<div class="rf-row"><span style="font-size:0.9rem;color:#0f172a;">{_ic} {p.get("designation","?")}</span>'
+                        f'<span class="rf-pill" style="background:{_pbg};color:{_pcl};">{_lbl} · {_stock}/{_mini}</span></div>',
+                        unsafe_allow_html=True,
+                    )
+            elif _pieces:
+                st.success("✅ Aucune pièce sous seuil.")
+            else:
+                st.info("Stock indisponible.")
     with _cAl:
-        st.markdown("**🏭 Alertes parc actives**")
-        st.markdown(
-            f'<span style="font-size:1.6rem;font-weight:800;color:#b45309;">{len(_alertes)}</span> '
-            f'machines en alerte',
-            unsafe_allow_html=True,
-        )
-        if _urgent:
-            st.markdown(f'Plus urgente : **{_urgent.get("nom", _urgent.get("id"))}** — '
-                        f'RUL {_urgent.get("rul_jours","?")} j')
+        with st.container(border=True):
+            st.markdown('<div class="rf-lab">🏭 Alertes parc actives</div>', unsafe_allow_html=True)
+            _urg_txt = (f'Plus urgente : <b>{_urgent.get("nom", _urgent.get("id"))}</b> — RUL {_urgent.get("rul_jours","?")} j'
+                        if _urgent else "Aucune machine en alerte")
+            st.markdown(
+                f'<div style="display:flex;align-items:baseline;gap:10px;">'
+                f'<span style="font-size:2rem;font-weight:800;color:#b45309;">{len(_alertes)}</span>'
+                f'<span style="color:#64748b;">machines en alerte</span></div>'
+                f'<div style="font-size:0.9rem;color:#334155;margin-top:8px;">{_urg_txt}</div>',
+                unsafe_allow_html=True,
+            )
 
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 0 — K0 SURVEILLANCE
