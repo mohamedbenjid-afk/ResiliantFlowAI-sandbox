@@ -171,7 +171,10 @@ with tab1:
     )
 
     # Calcul RUL projeté et risque (valeurs backlog US-S1 : 73% / 47 000€)
-    rul_projete  = max(0, c_rul - jours_report)
+    # jours_report est saisi en HEURES par le curseur, alors que c_rul (RUL) est
+    # en JOURS — conversion nécessaire avant soustraction (sinon on retire des
+    # "jours" en croyant retirer des heures, ce qui fait chuter le RUL ~24x trop vite).
+    rul_projete  = max(0, round(c_rul - jours_report / 24, 1))
     risque_base  = 73
     impact_base  = 47000
 
