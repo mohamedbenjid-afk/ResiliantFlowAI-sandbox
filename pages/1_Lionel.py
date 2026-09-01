@@ -206,15 +206,37 @@ with tab0:
             with st.spinner("🤖 Analyse IA en cours..."):
                 st.session_state["_agent_reco"] = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
             st.session_state["_agent_status"] = "Critique"
+            # Notification email au technicien référent — UNE SEULE FOIS par épisode critique
+            if not st.session_state.get("_email_sent"):
+                try:
+                    from notify import envoyer_alerte_critique
+                    with st.spinner("📧 Envoi de l'alerte au technicien..."):
+                        st.session_state["_email_result"] = envoyer_alerte_critique(
+                            "P-17", c_rul, st.session_state["_agent_reco"]
+                        )
+                except Exception as e:
+                    st.session_state["_email_result"] = {"ok": False, "error": str(e)}
+                st.session_state["_email_sent"] = True
         with st.expander("🤖 Recommandation IA — Agent Lionel", expanded=True):
             st.markdown(st.session_state.get("_agent_reco", ""))
             if st.button("🔄 Nouvelle analyse", key="btn_refresh_agent"):
                 with st.spinner("Analyse en cours..."):
                     st.session_state["_agent_reco"] = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
                 st.rerun()
+        # Bandeau statut de la notification email
+        _er = st.session_state.get("_email_result")
+        if _er:
+            if _er.get("ok"):
+                st.success(f"📧 Alerte envoyée à {_er.get('ref','')} — {_er.get('to','')}")
+            elif _er.get("skipped"):
+                st.info(f"📧 Notification email non envoyée — {_er.get('error','configuration manquante')}.")
+            else:
+                st.warning(f"📧 Échec de l'envoi email : {_er.get('error','?')}")
     else:
         st.session_state.pop("_agent_status", None)
         st.session_state.pop("_agent_reco", None)
+        st.session_state.pop("_email_sent", None)
+        st.session_state.pop("_email_result", None)
 
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 1 — K1 BRIEFING
