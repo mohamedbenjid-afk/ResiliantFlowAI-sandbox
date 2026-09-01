@@ -245,7 +245,7 @@ def run_agent_sophie(c_rul: int, equipement: str = "Pompe P-17",
  
     situation = (
         f"ALERTE MAINTENANCE — {equipement}\n"
-        f"- RUL estimé : {c_rul}h{details}\n\n"
+        f"- RUL estimé : {c_rul}j{details}\n\n"
         f"Analyse l'impact production, la disponibilité des ressources "
         f"et recommande la meilleure stratégie d'intervention."
     )
