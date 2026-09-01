@@ -125,7 +125,7 @@ def _cover(story, s, ctx):
     statut = ctx.get("statut", "—")
     data = [
         ["Machines couvertes", ctx.get("machine", "—"), "Date rapport", ctx["date_str"]],
-        ["RUL P-17 (temps réel)", f"{ctx.get('rul', '—')}h", "Statut P-17", statut],
+        ["RUL P-17 (temps réel)", f"{ctx.get('rul', '—')}j", "Statut P-17", statut],
     ]
     t = Table(data, colWidths=[4.2 * cm, 5.8 * cm, 4.2 * cm, 5.8 * cm])
     t.setStyle(TableStyle([
