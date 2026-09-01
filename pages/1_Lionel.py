@@ -37,7 +37,12 @@ with st.sidebar:
     st.markdown("---")
 
     init_session_state()
-    running_label = "⏸ Pause simulation" if st.session_state.running else "▶ Reprendre"
+    # Démarrage EN PAUSE par défaut : l'app est stable sur tous les onglets ;
+    # presser ▶ lance le rafraîchissement live de K0 pour la démo.
+    if "_started_paused" not in st.session_state:
+        st.session_state.running = False
+        st.session_state["_started_paused"] = True
+    running_label = "⏸ Pause simulation" if st.session_state.running else "▶ Reprendre le live (K0)"
     if st.button(running_label, use_container_width=True):
         st.session_state.running = not st.session_state.running
         st.rerun()
