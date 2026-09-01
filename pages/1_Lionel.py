@@ -510,205 +510,134 @@ with tab0:
 if tab1 is not None:
   with tab1:
     st.markdown("## 📋 Briefing du quart")
+    _bf_today = datetime.date.today().strftime("%d/%m/%Y")
+    st.caption(f"Lionel Dumont · quart du {_bf_today} · Unité B")
 
-    # Machines en alerte
-    st.markdown("### 🚨 État du parc machines — classé par urgence")
+    st.markdown("""
+    <style>
+    .bf-lab{font-size:0.84rem;color:#475569;font-weight:600;margin:10px 0 8px;}
+    .bf-row{display:flex;align-items:center;gap:12px;padding:11px 14px;border-top:1px solid #f1f5f9;}
+    .bf-pil{font-size:0.7rem;font-weight:700;padding:3px 8px;border-radius:6px;flex-shrink:0;}
+    .bf-st{font-size:0.72rem;padding:3px 10px;border-radius:20px;flex-shrink:0;white-space:nowrap;}
+    .bf-meta{font-size:0.77rem;color:#94a3b8;margin-top:2px;}
+    </style>
+    """, unsafe_allow_html=True)
 
-    def _urgency_rank(statut: str, rul: float) -> tuple:
-        """Clé de tri : (rang statut, RUL) — plus petit = plus urgent."""
-        rank = {"Critique": 0, "Alerte": 1, "Hors service": 2}.get(statut, 3)
-        return (rank, rul)
-
-    def _prescription(statut: str, rul: float, nom: str, is_p17: bool,
-                      temp: float = None, vib: float = None) -> str:
-        """Génère une prescription courte adaptée au contexte de la machine."""
-        if statut == "Critique" or rul <= 3:
-            if is_p17 and temp and temp > 75:
-                return "⚡ Surchauffe critique — déclencher procédure K2 immédiatement, arrêt production"
-            if is_p17 and vib and vib > 2.5:
-                return "⚡ Vibration critique — arrêt machine et inspection roulements avant remise en route"
-            return f"⚡ Intervention immédiate sur {nom} — RUL {rul} j, risque panne imminente"
-        elif statut == "Alerte" or rul <= 45:
-            if is_p17:
-                return f"⏰ Planifier intervention P-17 sous 48h — vérifier graissage et circuit refroidissement"
-            return f"⏰ Planifier maintenance {nom} cette semaine — RUL {rul} j"
-        elif statut == "Hors service":
-            return f"🔧 {nom} hors service — attendre validation technique avant remise en route"
-        else:
-            return f"✅ Surveillance standard — RUL {rul} j, prochain contrôle selon planning"
+    def _is_lio(t):
+        return "lionel" in (t or "").lower()
 
     try:
-        machines = nc.get_machines()
-        if machines:
-            # Override P-17 avec valeurs simulateur
-            for m in machines:
-                mid = m.get("id", "")
-                nom = m.get("nom", "")
-                if "P-17" in mid or "P-17" in nom:
-                    m["rul_jours"] = c_rul
-                    m["statut"]    = r_status
-            # Tri par urgence : Critique → Alerte → Hors service → Nominal, puis RUL croissant
-            machines_sorted = sorted(
-                machines,
-                key=lambda m: _urgency_rank(
-                    m.get("statut") or "Nominal",
-                    m.get("rul_jours") or 999
-                )
-            )
-            for m in machines_sorted:
-                nom    = m.get("nom", "?")
-                mid    = m.get("id", "")
-                rul    = m.get("rul_jours") or 0
-                statut = m.get("statut") or "Nominal"
-                is_p17 = "P-17" in mid or "P-17" in nom
-
-                if statut == "Critique" or rul <= 3:
-                    bg, border, icon = "#fee2e2", "#ef4444", "🔴"
-                elif statut == "Alerte" or rul <= 45:
-                    bg, border, icon = "#fef3c7", "#f59e0b", "🟠"
-                elif statut == "Hors service":
-                    bg, border, icon = "#f3f4f6", "#6b7280", "⚫"
-                else:
-                    bg, border, icon = "#f0fdf4", "#86efac", "🟢"
-
-                prescription = _prescription(
-                    statut, rul, nom, is_p17,
-                    temp=c_temp if is_p17 else None,
-                    vib=c_vib  if is_p17 else None,
-                )
-                st.markdown(
-                    f'<div style="background:{bg};border-left:4px solid {border};'
-                    f'border-radius:6px;padding:12px;margin-bottom:8px;">'
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                    f'<span>{icon} <b>{nom}</b> ({mid})</span>'
-                    f'<span style="font-size:0.82rem;color:#64748b;">RUL : <b>{rul} j</b> &nbsp;|&nbsp; {statut}</span>'
-                    f'</div>'
-                    f'<div style="font-size:0.85rem;margin-top:6px;color:#374151;">{prescription}</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.info("Aucune machine trouvée dans Notion.")
-    except Exception as e:
-        st.warning(f"Impossible de charger les machines : {e}")
-        fallback_machines = [
-            ("Pompe P-17",       "P-17", "Critique",      1,  "🔴", "#fee2e2", "#ef4444",
-             "⚡ Intervention immédiate — RUL 1 j, risque panne imminente"),
-            ("Compresseur C-03", "C-03", "Alerte",        18, "🟠", "#fef3c7", "#f59e0b",
-             "⏰ Planifier maintenance cette semaine — surveiller vibrations"),
-            ("Convoyeur CV-01",  "CV-01","Nominal",        72, "🟢", "#f0fdf4", "#86efac",
-             "✅ Surveillance standard — prochaine inspection dans 30 j"),
-        ]
-        for nom, mid, statut, rul, icon, bg, border, presc in fallback_machines:
-            st.markdown(
-                f'<div style="background:{bg};border-left:4px solid {border};'
-                f'border-radius:6px;padding:12px;margin-bottom:8px;">'
-                f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                f'<span>{icon} <b>{nom}</b> ({mid})</span>'
-                f'<span style="font-size:0.82rem;color:#64748b;">RUL : <b>{rul} j</b> &nbsp;|&nbsp; {statut}</span>'
-                f'</div>'
-                f'<div style="font-size:0.85rem;margin-top:6px;color:#374151;">{presc}</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-    # Interventions planifiées
-    st.markdown("---")
-    st.markdown("### 🗓 Interventions planifiées")
-    try:
-        planifiees = nc.get_historique(statut="Planifiée")
-        if planifiees:
-            for i in planifiees:
-                st.markdown(
-                    f'<div class="doc-box"><b>{i["titre"]}</b><br>'
-                    f'Machine : {i["machine"]} &nbsp;|&nbsp; Date : {i["date"] or "TBD"} &nbsp;|&nbsp; '
-                    f'Technicien : {i["technicien"]}</div>',
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.info("Aucune intervention planifiée.")
+        _bh = nc.get_historique(limit=200)
     except Exception:
-        st.warning("Données Notion indisponibles — affichage de secours.")
-        st.markdown("""
-        | Titre | Machine | Date | Technicien |
-        |---|---|---|---|
-        | Remplacement joint P-17 | Pompe P-17 | 2026-06-18 | Lionel |
-        | Inspection C-03 | Compresseur C-03 | 2026-06-20 | Marc D. |
-        """)
+        _bh = []
+    _mes = [i for i in _bh if _is_lio(i.get("technicien"))
+            and i.get("statut") in ("Planifiée", "En retard", "En cours")]
+    _PRANK = {"P1 - Critique": 0, "P2 - Haute": 1, "P3 - Normale": 2, "P4 - Basse": 3}
+    _mes.sort(key=lambda i: (_PRANK.get(i.get("priorite"), 4), i.get("date") or "9999"))
 
-    # Équipe & disponibilité
-    col_e, col_p = st.columns(2)
-    with col_e:
-        st.markdown("### 👥 Équipe disponible")
-        try:
-            equipe = nc.get_equipe()
-            if equipe:
-                for tech in equipe:
-                    dispo = tech.get("disponibilite") or "Inconnu"
-                    color = "#166534" if dispo == "Disponible" else (
-                            "#b45309" if dispo == "Partiellement disponible" else "#b91c1c")
-                    st.markdown(
-                        f'<div style="display:flex;align-items:center;gap:10px;'
-                        f'padding:8px;border-radius:6px;background:#f8fafc;margin-bottom:6px;">'
-                        f'<span style="color:{color};font-size:1.2rem;">●</span>'
-                        f'<span><b>{tech.get("prenom","")} {tech.get("nom","")}</b><br>'
-                        f'<small>{tech.get("role","")} — {tech.get("heures_restantes") or "?"} h restantes</small>'
-                        f'</span></div>',
-                        unsafe_allow_html=True,
-                    )
-            else:
-                st.info("Aucun technicien trouvé.")
-        except Exception:
-            st.warning("Données équipe indisponibles.")
-            data_equipe = [
-                ("Lionel B.", "Mécanique/Hydraulique", "8h", "Disponible", "#166534"),
-                ("Marc D.", "Électricité", "1h", "Chargé", "#b91c1c"),
-                ("Fatima R.", "Automatisme", "5h", "Disponible", "#166534"),
-            ]
-            for nom, spec, h, dispo, color in data_equipe:
-                st.markdown(
-                    f'<div style="display:flex;align-items:center;gap:10px;padding:8px;'
-                    f'border-radius:6px;background:#f8fafc;margin-bottom:6px;">'
-                    f'<span style="color:{color};font-size:1.2rem;">●</span>'
-                    f'<span><b>{nom}</b> — {spec}<br><small>{dispo} — {h} restantes</small>'
-                    f'</span></div>',
-                    unsafe_allow_html=True,
-                )
+    try:
+        _bm = nc.get_machines()
+        for _m in _bm:
+            if "P-17" in ((_m.get("id") or "") + (_m.get("nom") or "")):
+                _m["rul_jours"] = c_rul
+                _m["statut"] = r_status
+    except Exception:
+        _bm = []
+    _bfal = [m for m in _bm if (m.get("statut") in ("Alerte", "Critique"))
+             or ((m.get("rul_jours") or 999) <= 45)]
+    _bfal.sort(key=lambda m: m.get("rul_jours") or 999)
 
-    with col_p:
-        st.markdown("### 🔩 Stock pièces P-17")
-        try:
-            pieces = nc.get_pieces(machine_id="P-17")
-            if pieces:
-                for p in pieces:
-                    stock = p.get("stock_actuel") or 0
-                    mini  = p.get("stock_minimum") or 1
-                    statut_s = p.get("statut_stock") or ("En stock" if stock >= mini else "Rupture")
-                    color = "#166534" if stock >= mini else "#b91c1c"
-                    icon  = "✅" if stock >= mini else "❌"
-                    st.markdown(
-                        f'{icon} **{p.get("designation","?")}** — '
-                        f'<span style="color:{color}">Stock : {stock}</span> '
-                        f'(min {mini})',
-                        unsafe_allow_html=True,
-                    )
-            else:
-                st.info("Aucune pièce P-17 trouvée.")
-        except Exception:
-            st.warning("Stock indisponible.")
-            pieces_fallback = [
-                ("Joints d'étanchéité P17", 2, 1, True),
-                ("Roulements 6205-2RS",     0, 2, False),
-                ("Garnitures mécaniques",   3, 1, True),
-                ("Filtre hydraulique FH-17", 1, 1, True),
-            ]
-            for nom, stock, mini, ok in pieces_fallback:
-                icon = "✅" if ok else "❌"
-                color = "#166534" if ok else "#b91c1c"
-                st.markdown(
-                    f'{icon} **{nom}** — <span style="color:{color}">Stock : {stock}</span> (min {mini})',
-                    unsafe_allow_html=True,
-                )
+    st.markdown(
+        f'<div style="display:flex;gap:8px;margin-bottom:4px;">'
+        f'<span style="font-size:0.72rem;color:#b45309;background:#fef3c7;padding:4px 10px;border-radius:20px;">{len(_bfal)} alerte(s)</span>'
+        f'<span style="font-size:0.72rem;color:#475569;background:#f1f5f9;padding:4px 10px;border-radius:20px;">{len(_mes)} intervention(s)</span>'
+        f'</div>', unsafe_allow_html=True)
+
+    # ── À traiter aujourd'hui ──────────────────────────────────────────────────
+    st.markdown('<div class="bf-lab">🚨 À traiter aujourd\'hui</div>', unsafe_allow_html=True)
+    if _bfal:
+        for m in _bfal:
+            _nm = m.get("nom", m.get("id", "?"))
+            _rul = m.get("rul_jours", "?")
+            _stt = m.get("statut", "Alerte")
+            _crit = (_stt == "Critique") or ((m.get("rul_jours") or 999) <= 3)
+            _pbg, _pcl = ("#fee2e2", "#b91c1c") if _crit else ("#fef3c7", "#b45309")
+            _act = ("Intervention immédiate — risque de panne imminente."
+                    if _crit else "Planifier l'intervention sous 48h — surveiller les seuils.")
+            st.markdown(
+                f'<div style="background:#fff;border:1px solid #e6e8ec;border-radius:12px;padding:12px 16px;'
+                f'margin-bottom:8px;display:flex;align-items:center;gap:12px;">'
+                f'<span style="width:9px;height:9px;border-radius:50%;background:{_pcl};flex-shrink:0;"></span>'
+                f'<div style="flex:1;min-width:0;"><span style="font-weight:600;color:#0f172a;">{_nm}</span> '
+                f'<span class="bf-st" style="background:{_pbg};color:{_pcl};">RUL {_rul} j · {_stt}</span>'
+                f'<div class="bf-meta" style="color:#64748b;">{_act}</div></div></div>',
+                unsafe_allow_html=True)
+    else:
+        st.success("✅ Aucune machine en alerte — parc nominal.")
+
+    # ── Mes interventions du poste ─────────────────────────────────────────────
+    st.markdown('<div class="bf-lab">📋 Mes interventions du poste</div>', unsafe_allow_html=True)
+    if _mes:
+        _PILL = {"P1 - Critique": ("P1", "#fee2e2", "#b91c1c"),
+                 "P2 - Haute":    ("P2", "#fef3c7", "#b45309"),
+                 "P3 - Normale":  ("P3", "#f1f5f9", "#475569"),
+                 "P4 - Basse":    ("P4", "#f1f5f9", "#94a3b8")}
+        _STP = {"En retard": ("en retard", "#fee2e2", "#b91c1c"),
+                "Planifiée": ("à faire", "#f1f5f9", "#475569"),
+                "En cours":  ("en cours", "#dbeafe", "#1d4ed8")}
+        _rows = ""
+        for i in _mes:
+            _pl, _pbg, _pcl = _PILL.get(i.get("priorite"), ("P—", "#f1f5f9", "#94a3b8"))
+            _sl, _sbg, _scl = _STP.get(i.get("statut"), (i.get("statut") or "", "#f1f5f9", "#475569"))
+            _mach = i.get("machine") or "?"
+            _pieces = i.get("pieces") or i.get("composants") or ""
+            _meta = f'📅 {i.get("date") or "TBD"}'
+            if _pieces:
+                _meta += f' · 🔩 {_pieces}'
+            _rows += (
+                f'<div class="bf-row">'
+                f'<span class="bf-pil" style="background:{_pbg};color:{_pcl};">{_pl}</span>'
+                f'<div style="flex:1;min-width:0;"><div style="color:#0f172a;">{i.get("titre","")} '
+                f'<span style="color:#64748b;">· {_mach}</span></div>'
+                f'<div class="bf-meta">{_meta}</div></div>'
+                f'<span class="bf-st" style="background:{_sbg};color:{_scl};">{_sl}</span></div>')
+        st.markdown(
+            f'<div style="background:#fff;border:1px solid #e6e8ec;border-radius:12px;overflow:hidden;">{_rows}</div>',
+            unsafe_allow_html=True)
+    else:
+        st.info("Aucune intervention assignée sur ce poste.")
+
+    # ── Renforts disponibles ───────────────────────────────────────────────────
+    st.markdown('<div class="bf-lab">👥 Renforts disponibles</div>', unsafe_allow_html=True)
+    try:
+        _eqp = nc.get_equipe()
+    except Exception:
+        _eqp = []
+    if _eqp:
+        _cards = ""
+        for t in _eqp:
+            _dispo = t.get("disponibilite") or "Inconnu"
+            _dot = "#1baf7a" if _dispo == "Disponible" else (
+                   "#b45309" if "interv" in _dispo.lower() else "#94a3b8")
+            _pren, _nom = t.get("prenom", "") or "", t.get("nom", "") or ""
+            _ini = (_pren[:1] + _nom[:1]).upper() or "?"
+            _h = t.get("heures_restantes")
+            _sub = t.get("specialite") or t.get("role") or ""
+            if _h is not None:
+                _sub += f' · {_h:.0f} h'
+            _cards += (
+                f'<div style="background:#fff;border:1px solid #e6e8ec;border-radius:12px;padding:11px 14px;'
+                f'display:flex;align-items:center;gap:10px;">'
+                f'<div style="width:34px;height:34px;border-radius:50%;background:#eff6ff;color:#1d4ed8;'
+                f'display:flex;align-items:center;justify-content:center;font-size:0.8rem;font-weight:600;">{_ini}</div>'
+                f'<div style="flex:1;min-width:0;"><div style="font-size:0.9rem;color:#0f172a;">{_pren} {_nom}</div>'
+                f'<div style="font-size:0.77rem;color:#94a3b8;">{_dispo} · {_sub}</div></div>'
+                f'<span style="width:9px;height:9px;border-radius:50%;background:{_dot};flex-shrink:0;"></span></div>')
+        st.markdown(
+            f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">{_cards}</div>',
+            unsafe_allow_html=True)
+    else:
+        st.info("Équipe indisponible.")
 
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 2 — K2 PROCÉDURE
