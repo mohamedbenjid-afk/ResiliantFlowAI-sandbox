@@ -645,6 +645,18 @@ if tab1 is not None:
 if tab2 is not None:
   with tab2:
     st.markdown("## 📘 Procédure d'intervention — Pompe P-17")
+    st.caption("Machine instrumentée pilote · Unité B")
+
+    st.markdown("""
+    <style>
+    .k2-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:8px 0 14px;}
+    .k2-tile{background:#f8fafc;border:1px solid #eef1f5;border-radius:12px;padding:11px 14px;}
+    .k2-tile .l{font-size:0.74rem;color:#64748b;}
+    .k2-tile .v{font-size:1.05rem;font-weight:700;color:#0f172a;margin-top:3px;}
+    .k2-pill{font-size:0.75rem;padding:4px 12px;border-radius:20px;font-weight:600;white-space:nowrap;}
+    .k2-epi{font-size:0.8rem;padding:4px 12px;border-radius:20px;display:inline-block;margin:3px;}
+    </style>
+    """, unsafe_allow_html=True)
 
     # Détection type d'anomalie depuis capteurs
     if c_temp > 75:
@@ -656,156 +668,178 @@ if tab2 is not None:
     else:
         anomalie = "Usure normale"
 
-    # ── Bandeau statut selon niveau d'alerte réel ────────────────────────────
-    if r_status == "Critique":
-        st.error(f"🔴 **{anomalie} — CRITIQUE** — RUL : {c_rul} j — Intervention immédiate requise")
-    elif r_status == "Alerte":
-        st.warning(f"🟠 **{anomalie} — ALERTE** — RUL : {c_rul} j — Planifier intervention sous 48h")
-    else:
-        st.info(f"🟢 **État nominal** — RUL : {c_rul} j — Aucune intervention requise. "
-                f"Procédure de référence ci-dessous.")
-
-    # Durée et ressources estimées selon type d'anomalie
-    duree_map = {
-        "Surchauffe":           ("~35 min", "Roulements 6205-2RS + Mobilux EP2", "2 techniciens"),
-        "Vibration excessive":  ("~45 min", "Roulements + Garnitures mécaniques", "2 techniciens"),
-        "Pression insuffisante":("~20 min", "Joints d'étanchéité P17", "1 technicien"),
-        "Usure normale":        ("~25 min", "Filtres + vérification générale", "1 technicien"),
-    }
-    duree_est, pieces_est, equipe_est = duree_map.get(anomalie, ("~30 min", "À déterminer", "1 technicien"))
+    # ── Statut en pastille ────────────────────────────────────────────────────
+    _sbg = STATUS_BG.get(r_status, "#f1f5f9")
+    _scl = STATUS_COLOR.get(r_status, "#475569")
+    _smsg = {"Critique": "intervention immédiate requise",
+             "Alerte": "planifier sous 48h",
+             "Nominal": "aucune intervention requise — procédure de référence"}.get(r_status, "")
     st.markdown(
-        f'<div style="background:#f0f9ff;border-left:4px solid #38bdf8;border-radius:6px;'
-        f'padding:10px 14px;margin-bottom:12px;font-size:0.9rem;">'
-        f'⏱ <b>Durée estimée : {duree_est}</b> &nbsp;|&nbsp; '
-        f'🔩 Pièces : {pieces_est} &nbsp;|&nbsp; '
-        f'👷 {equipe_est} &nbsp;|&nbsp; '
-        f'📦 Kit : casier {P17_CONTEXT["kit_casier"]} &nbsp;|&nbsp; '
-        f'💶 Coût d\'arrêt : {P17_CONTEXT["cout_arret_eur_h"]} €/h'
+        f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:4px;flex-wrap:wrap;">'
+        f'<span class="k2-pill" style="background:{_sbg};color:{_scl};">{r_status} · RUL {c_rul} j</span>'
+        f'<span style="color:#64748b;font-size:0.9rem;">Anomalie : '
+        f'<b style="color:#0f172a;">{anomalie}</b> — {_smsg}</span></div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Ressources en tuiles ──────────────────────────────────────────────────
+    duree_map = {
+        "Surchauffe":            ("~35 min", "Roulement 6205-2RS", "2 tech."),
+        "Vibration excessive":   ("~45 min", "Roulements + garnitures", "2 tech."),
+        "Pression insuffisante": ("~20 min", "Garniture / joints", "1 tech."),
+        "Usure normale":         ("~25 min", "Filtres + consommables", "1 tech."),
+    }
+    duree_est, pieces_est, equipe_est = duree_map.get(anomalie, ("~30 min", "À déterminer", "1 tech."))
+    st.markdown(
+        f'<div class="k2-tiles">'
+        f'<div class="k2-tile"><div class="l">⏱ Durée</div><div class="v">{duree_est}</div></div>'
+        f'<div class="k2-tile"><div class="l">🔩 Pièces</div><div class="v" style="font-size:0.9rem;">{pieces_est}</div></div>'
+        f'<div class="k2-tile"><div class="l">👷 Équipe</div><div class="v">{equipe_est}</div></div>'
+        f'<div class="k2-tile"><div class="l">📦 Kit</div><div class="v" style="font-size:0.95rem;">casier {P17_CONTEXT["kit_casier"]}</div></div>'
+        f'<div class="k2-tile"><div class="l">💶 Coût d\'arrêt</div><div class="v">{P17_CONTEXT["cout_arret_eur_h"]} €/h</div></div>'
         f'</div>',
         unsafe_allow_html=True,
     )
 
-    # EPI requis selon l'anomalie détectée
+    # ── EPI par anomalie ──────────────────────────────────────────────────────
     EPI_PAR_ANOMALIE = {
-        "Surchauffe": [
-            ("🪖", "Casque",               True),
-            ("🧤", "Gants anti-coupure",   True),
-            ("🥽", "Lunettes protection",   True),
-            ("👟", "Chaussures sécurité",   True),
-            ("🔥", "Gants thermiques",      True),   # spécifique surchauffe
-            ("👔", "Combinaison ignifugée", False),  # recommandé
-        ],
-        "Vibration excessive": [
-            ("🪖", "Casque",               True),
-            ("🧤", "Gants anti-coupure",   True),
-            ("🥽", "Lunettes protection",   True),
-            ("👟", "Chaussures sécurité",   True),
-            ("🎧", "Bouchons anti-bruit",   True),   # spécifique vibration
-        ],
-        "Pression insuffisante": [
-            ("🪖", "Casque",               True),
-            ("🧤", "Gants anti-coupure",   True),
-            ("🥽", "Lunettes protection",   True),
-            ("👟", "Chaussures sécurité",   True),
-            ("🧥", "Combinaison étanche",   True),   # spécifique pression/fuite
-        ],
-        "Usure normale": [
-            ("🪖", "Casque",               True),
-            ("🧤", "Gants anti-coupure",   True),
-            ("🥽", "Lunettes protection",   True),
-            ("👟", "Chaussures sécurité",   True),
-        ],
+        "Surchauffe": [("🪖", "casque", True), ("🧤", "gants anti-coupure", True),
+                       ("🥽", "lunettes", True), ("👟", "chaussures S3", True),
+                       ("🔥", "gants thermiques", True), ("👔", "combinaison ignifugée", False)],
+        "Vibration excessive": [("🪖", "casque", True), ("🧤", "gants anti-coupure", True),
+                                ("🥽", "lunettes", True), ("👟", "chaussures S3", True),
+                                ("🎧", "bouchons anti-bruit", True)],
+        "Pression insuffisante": [("🪖", "casque", True), ("🧤", "gants anti-coupure", True),
+                                  ("🥽", "lunettes", True), ("👟", "chaussures S3", True),
+                                  ("🧥", "combinaison étanche", True)],
+        "Usure normale": [("🪖", "casque", True), ("🧤", "gants anti-coupure", True),
+                          ("🥽", "lunettes", True), ("👟", "chaussures S3", True)],
     }
     epis = EPI_PAR_ANOMALIE.get(anomalie, EPI_PAR_ANOMALIE["Usure normale"])
     obligatoires = [e for e in epis if e[2]]
     recommandes  = [e for e in epis if not e[2]]
-
-    epi_html = "".join(
-        f'<span style="display:inline-flex;align-items:center;gap:5px;'
-        f'background:#dcfce7;border:1px solid #86efac;border-radius:20px;'
-        f'padding:4px 12px;margin:3px;font-size:0.88rem;">'
-        f'{ico} {label}</span>'
-        for ico, label, _ in obligatoires
-    )
-    rec_html = "".join(
-        f'<span style="display:inline-flex;align-items:center;gap:5px;'
-        f'background:#fef9c3;border:1px solid #fde047;border-radius:20px;'
-        f'padding:4px 12px;margin:3px;font-size:0.88rem;color:#854d0e;">'
-        f'{ico} {label} <i>(recommandé)</i></span>'
-        for ico, label, _ in recommandes
-    )
+    _epi_h = "".join(f'<span class="k2-epi" style="background:#dcfce7;color:#166534;">{i} {l}</span>'
+                     for i, l, _ in obligatoires)
+    _rec_h = "".join(f'<span class="k2-epi" style="background:#fef9c3;color:#854d0e;">{i} {l} · recommandé</span>'
+                     for i, l, _ in recommandes)
     st.markdown(
-        f'<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:14px 16px;margin-bottom:12px;">'
-        f'<div style="font-weight:700;margin-bottom:8px;color:#166534;">🦺 EPI obligatoires — {anomalie}</div>'
-        f'<div style="flex-wrap:wrap;">{epi_html}</div>'
-        + (f'<div style="margin-top:6px;">{rec_html}</div>' if rec_html else "")
-        + '</div>',
+        f'<div style="background:#fff;border:1px solid #e6e8ec;border-radius:12px;padding:14px 16px;margin-bottom:12px;">'
+        f'<div style="font-weight:600;margin-bottom:8px;color:#475569;font-size:0.86rem;">🦺 EPI obligatoires — {anomalie}</div>'
+        f'<div>{_epi_h}{_rec_h}</div></div>',
         unsafe_allow_html=True,
     )
 
-    st.markdown("---")
-    st.markdown("### ✅ Checklist LOTO / EPI / Intervention")
-
-    # Initialiser les étapes si besoin
-    CHECKLIST_STEPS = [
-        # Phase 0 — Préparation & EPI
-        ("phase", "🦺 Phase 1 — Préparation & EPI"),
-        ("step",  "Mettre les EPI : casque, gants anti-coupure, lunettes, chaussures de sécurité"),
-        ("step",  f"Récupérer le kit d'intervention P-17 au magasin (casier {P17_CONTEXT['kit_casier']})"),
-        ("step",  "Vérifier la disponibilité des pièces requises en stock"),
-        ("step",  "Informer le manager Sophie de l'arrêt planifié"),
-        # Phase 1 — LOTO
-        ("phase", "🔒 Phase 2 — Consignation LOTO"),
-        ("step",  f"Isoler l'alimentation électrique (disjoncteur {P17_CONTEXT['disjoncteur']}) et apposer cadenas rouge"),
-        ("step",  f"Fermer les vannes d'isolement amont {P17_CONTEXT['vanne_amont']} et aval {P17_CONTEXT['vanne_aval']}"),
-        ("step",  f"Purger la pression résiduelle via le point de test {P17_CONTEXT['point_purge']}"),
-        ("step",  "Apposer la plaque de consignation et notifier le poste de contrôle"),
-        # Phase 2 — Intervention
-        ("phase", "🔧 Phase 3 — Intervention mécanique"),
-        ("step",  "Déposer le carter avant (4 vis M12, clé 19)"),
-        ("step",  "Extraire le roulement défectueux avec l'extracteur hydraulique"),
-        ("step",  "Nettoyer le logement et vérifier l'état de l'arbre"),
-        ("step",  f"Monter le nouveau roulement {P17_CONTEXT['roulement_ref']} (graissage préalable {P17_CONTEXT['graisse']})"),
-        ("step",  f"Remonter le carter et vérifier le couple de serrage ({P17_CONTEXT['couple_carter_nm']} N·m)"),
-        # Phase 3 — Remise en service
-        ("phase", "✅ Phase 4 — Remise en service"),
-        ("step",  "Retirer les consignations LOTO et informer le poste de contrôle"),
-        ("step",  "Démarrage progressif et surveillance 15 min (temp, vib, pression)"),
-        ("step",  f"Valider les paramètres : T < {P17_CONTEXT['valid_temp_max']} °C, vib < {P17_CONTEXT['valid_vib_max']} mm/s, P > {P17_CONTEXT['valid_pres_min']} bar"),
+    # ── Checklist par phase (étapes adaptées à l'anomalie) ────────────────────
+    _P1 = [
+        "Mettre les EPI adaptés à l'anomalie",
+        f"Récupérer le kit d'intervention au casier {P17_CONTEXT['kit_casier']}",
+        "Vérifier la disponibilité des pièces en stock",
+        "Prévenir le manager Sophie de l'arrêt",
+    ]
+    _P2 = [
+        f"Consigner le disjoncteur {P17_CONTEXT['disjoncteur']} + cadenas",
+        f"Fermer les vannes {P17_CONTEXT['vanne_amont']} / {P17_CONTEXT['vanne_aval']}",
+        f"Purger la pression via {P17_CONTEXT['point_purge']}",
+        "Apposer la plaque de consignation + VAT",
+    ]
+    _P3_BY = {
+        "Surchauffe": [
+            "Attendre refroidissement carter < 40 °C",
+            "Déposer le carter avant (4 vis M12, clé 19)",
+            f"Extraire le roulement {P17_CONTEXT['roulement_ref']} (extracteur hydraulique)",
+            f"Contrôler l'arbre et regraisser ({P17_CONTEXT['graisse']})",
+            f"Monter le roulement neuf, couple carter {P17_CONTEXT['couple_carter_nm']} N·m",
+        ],
+        "Vibration excessive": [
+            "Contrôler le jeu axial / radial des paliers",
+            "Déposer l'accouplement et le carter",
+            "Remplacer roulements + garnitures mécaniques",
+            "Réaligner l'accouplement au comparateur",
+            "Contrôler le balourd et équilibrer",
+        ],
+        "Pression insuffisante": [
+            "Vérifier le niveau et l'amorçage",
+            "Déposer le corps de pompe",
+            "Remplacer la garniture mécanique / joints",
+            "Contrôler l'usure de la roue et des bagues",
+            "Remonter et vérifier l'étanchéité",
+        ],
+        "Usure normale": [
+            "Inspection visuelle générale",
+            "Contrôle du serrage et des fixations",
+            "Remplacer filtres et consommables",
+            "Graissage des points de lubrification",
+            "Relevé des paramètres de référence",
+        ],
+    }
+    _P4 = [
+        "Retirer les consignations LOTO",
+        "Démarrage progressif + surveillance 15 min",
+        f"Valider T < {P17_CONTEXT['valid_temp_max']} °C · vib < {P17_CONTEXT['valid_vib_max']} mm/s · P > {P17_CONTEXT['valid_pres_min']} bar",
+    ]
+    PHASES = [
+        ("🦺 Phase 1 — préparation & EPI", "~5 min", _P1),
+        ("🔒 Phase 2 — consignation LOTO", "~8 min", _P2),
+        (f"🔧 Phase 3 — intervention · {anomalie.lower()}", "~18 min", _P3_BY.get(anomalie, _P3_BY["Usure normale"])),
+        ("✅ Phase 4 — remise en service", "~7 min", _P4),
     ]
 
-    if "checklist_steps" not in st.session_state:
-        st.session_state["checklist_steps"] = [False] * sum(
-            1 for kind, _ in CHECKLIST_STEPS if kind == "step"
-        )
+    st.markdown("### ✅ Checklist d'intervention")
+    _all_states = []
+    for _pi, (ptitle, ptime, psteps) in enumerate(PHASES):
+        _pdone = sum(st.session_state.get(f"chk_{anomalie}_{_pi}_{j}", False) for j in range(len(psteps)))
+        with st.container(border=True):
+            st.markdown(
+                f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                f'<span style="font-weight:600;">{ptitle}</span>'
+                f'<span style="font-size:0.8rem;color:#64748b;">{ptime} · {_pdone}/{len(psteps)}</span></div>',
+                unsafe_allow_html=True)
+            for j, stp in enumerate(psteps):
+                _v = st.checkbox(stp, key=f"chk_{anomalie}_{_pi}_{j}")
+                _all_states.append(_v)
 
-    checked_total = sum(st.session_state["checklist_steps"])
-    step_total    = len(st.session_state["checklist_steps"])
-    step_idx      = 0
-
-    for kind, label in CHECKLIST_STEPS:
-        if kind == "phase":
-            st.markdown(f"**{label}**")
-        else:
-            checked = st.checkbox(
-                label, value=st.session_state["checklist_steps"][step_idx],
-                key=f"chk_{step_idx}"
-            )
-            st.session_state["checklist_steps"][step_idx] = checked
-            step_idx += 1
-
-    st.markdown("---")
+    checked_total = sum(_all_states)
+    step_total = len(_all_states)
     pct_done = checked_total / step_total if step_total else 0
     st.progress(pct_done, text=f"{checked_total}/{step_total} étapes validées")
 
-    col_r, col_d = st.columns([1, 3])
+    if pct_done == 1.0:
+        st.success("✅ Procédure complète — passez à l'onglet **K3 Post-intervention**.")
+
+    # ── Actions : réinitialiser + bon de travail ──────────────────────────────
+    col_r, col_g = st.columns([1, 2])
     with col_r:
         if st.button("🔄 Réinitialiser", use_container_width=True):
-            st.session_state["checklist_steps"] = [False] * step_total
+            for _pi, (_, _, psteps) in enumerate(PHASES):
+                for j in range(len(psteps)):
+                    st.session_state.pop(f"chk_{anomalie}_{_pi}_{j}", None)
             st.rerun()
-    with col_d:
-        if pct_done == 1.0:
-            st.success("✅ Procédure complète — passez à l'onglet **K3 Post-intervention**")
+    with col_g:
+        if st.button("📤 Générer et envoyer le bon de travail à Sophie",
+                     use_container_width=True, type="primary"):
+            _epi_txt = ", ".join(l for _, l, _ in obligatoires)
+            _recap = (f"Ressources : durée {duree_est} · pièces {pieces_est} · {equipe_est} · "
+                      f"kit casier {P17_CONTEXT['kit_casier']}\nEPI : {_epi_txt}\n\nÉTAPES :")
+            for _pi, (ptitle, ptime, psteps) in enumerate(PHASES):
+                _recap += f"\n\n{ptitle} ({ptime})"
+                for j, stp in enumerate(psteps):
+                    _dn = st.session_state.get(f"chk_{anomalie}_{_pi}_{j}", False)
+                    _recap += f"\n  [{'x' if _dn else ' '}] {stp}"
+            _recap += f"\n\nAvancement : {checked_total}/{step_total} étapes."
+            try:
+                from notify import envoyer_bon_de_travail
+                with st.spinner("📤 Envoi du bon de travail au manager..."):
+                    _bt = envoyer_bon_de_travail("Pompe P-17", anomalie, r_status, c_rul, _recap)
+            except Exception as e:
+                _bt = {"ok": False, "error": str(e)}
+            if _bt.get("ok"):
+                st.success(f"📧 Bon de travail envoyé à {_bt.get('ref', 'Sophie')} (manager) — {_bt.get('to', '')}")
+            elif _bt.get("skipped"):
+                st.info(f"📧 Non envoyé — {_bt.get('error', 'configuration manquante')}.")
+            else:
+                st.warning(f"📧 Échec de l'envoi : {_bt.get('error', '?')}")
+            with st.expander("📋 Aperçu du bon de travail envoyé"):
+                st.text(_recap)
 
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 3 — K3 POST-INTERVENTION

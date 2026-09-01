@@ -132,3 +132,54 @@ def envoyer_alerte_critique(machine_id: str, rul_jours, reco_markdown: str) -> d
     res = _send_email(email, subject, text_body, html_body)
     res["ref"] = ref_nom
     return res
+
+
+# ── Manager (chef d'équipe) ───────────────────────────────────────────────────
+def get_manager_email() -> tuple[str, str]:
+    """Retourne (nom, email) du chef d'équipe (manager maintenance)."""
+    pages = nc._query_db(nc.DB_IDS["equipe"])
+    for p in pages:
+        role = nc._prop(p, "Rôle") or ""
+        if "chef" in role.lower():
+            nom = f"{nc._prop(p, 'Prénom') or ''} {nc._prop(p, 'Nom Technicien') or ''}".strip()
+            return (nom, _read_email(p))
+    return ("", "")
+
+
+def envoyer_bon_de_travail(machine_label: str, anomalie: str, statut: str,
+                           rul_jours, recap_text: str) -> dict:
+    """Envoie le bon de travail au manager (Sophie). Retourne {ok, to, ref, ...}."""
+    nom, email = get_manager_email()
+    if not email:
+        return {"ok": False, "skipped": True, "ref": nom,
+                "error": f"Aucun email pour le manager « {nom or '?'} »"}
+
+    horodatage = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    subject = f"📋 Bon de travail {machine_label} — {anomalie} ({statut})"
+
+    text_body = (
+        f"BON DE TRAVAIL — ResilientFlow AI\n"
+        f"{'='*48}\n\n"
+        f"Machine   : {machine_label}\n"
+        f"Anomalie  : {anomalie}\n"
+        f"Statut    : {statut}\n"
+        f"RUL       : {rul_jours} j\n"
+        f"Émis le   : {horodatage} par Lionel Dumont (terrain)\n\n"
+        f"{recap_text}\n\n"
+        f"{'-'*48}\n"
+        f"Pour validation / planification par le manager maintenance."
+    )
+    html_body = (
+        f"<div style='font-family:Arial,sans-serif;max-width:640px;'>"
+        f"<div style='background:#0f4c81;color:#fff;padding:14px 18px;border-radius:6px;'>"
+        f"<b>📋 Bon de travail — {machine_label}</b><br>"
+        f"<span style='font-size:0.9rem;'>{anomalie} · statut {statut} · RUL {rul_jours} j</span></div>"
+        f"<p style='color:#374151;'>Émis le {horodatage} par <b>Lionel Dumont</b> (terrain).</p>"
+        f"<pre style='white-space:pre-wrap;background:#f8fafc;border:1px solid #e2e8f0;"
+        f"border-radius:6px;padding:14px;font-family:inherit;font-size:0.92rem;color:#1e293b;'>"
+        f"{recap_text}</pre>"
+        f"<p style='color:#94a3b8;font-size:0.8rem;'>Pour validation / planification par le manager.</p></div>"
+    )
+    res = _send_email(email, subject, text_body, html_body)
+    res["ref"] = nom
+    return res
