@@ -30,6 +30,12 @@ def _secret(key: str, default: str = "") -> str:
 
 
 # ── Résolution du destinataire depuis Notion ─────────────────────────────────
+def _read_email(page: dict) -> str:
+    """Lit une propriété Notion de type 'email' (non géré par notion_client._prop)."""
+    p = page.get("properties", {}).get("Email", {})
+    return p.get("email") or ""
+
+
 def get_referent_email(machine_id: str = "P-17") -> tuple[str, str]:
     """Retourne (nom_referent, email) du technicien référent de la machine.
     Renvoie (nom, "") si aucun email n'est trouvé."""
@@ -44,7 +50,7 @@ def get_referent_email(machine_id: str = "P-17") -> tuple[str, str]:
     for p in pages:
         prenom = (nc._prop(p, "Prénom") or "").strip()
         nom    = (nc._prop(p, "Nom Technicien") or "").strip()
-        email  = nc._prop(p, "Email")
+        email  = _read_email(p)          # type 'email' lu directement
         complet = f"{prenom} {nom}".strip().lower()
         if email and (complet == ref_low or (nom and nom.lower() in ref_low)):
             return (referent, email)
