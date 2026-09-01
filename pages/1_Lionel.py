@@ -91,40 +91,65 @@ tab4 = _tabs[5]
 # ════════════════════════════════════════════════════════════════════════════════
 with tab_dash:
     st.markdown("## 📊 Mon poste — Lionel Dumont")
-    st.caption("Technicien terrain · Unité B · Machine surveillée : Pompe P-17")
+    st.caption("Technicien terrain · Unité B · Vue parc — sélectionnez une machine")
+
+    _MACHINES = ["P-17", "C-03", "M-08", "P-09", "V-12"]
+    _sel = st.selectbox("🏭 Machine", _MACHINES, index=0, key="dash_machine")
 
     _mois = datetime.date.today().strftime("%Y-%m")
-    def _is_lio(t):
-        return "lionel" in (t or "").lower()
+    def _mmatch(i):
+        return _sel in (i.get("machine") or "")
 
+    # ── Contexte de la machine sélectionnée ───────────────────────────────────
     try:
-        _hist = nc.get_historique(limit=100)
+        _mrec = nc.get_machine(_sel) or {}
+    except Exception:
+        _mrec = {}
+    _mnom = _mrec.get("nom") or _sel
+    _munite = _mrec.get("unite") or "—"
+    _ref_nom = _mrec.get("responsable") or "—"
+
+    if _sel == "P-17":
+        _rul_val, _stat, _live = c_rul, r_status, True
+    else:
+        _rul_val = int(_mrec.get("rul_jours") or 90)
+        _stat = _mrec.get("statut") or ("Nominal" if _rul_val > 45 else ("Alerte" if _rul_val > 3 else "Critique"))
+        _live = False
+    _rul_pct_sel = max(0.0, min(1.0, _rul_val / RUL_NOMINAL))
+
+    # ── Indicateurs recalculés pour la machine sélectionnée ───────────────────
+    try:
+        _hist = nc.get_historique(limit=200)
     except Exception:
         _hist = []
-    _a_faire   = sum(1 for i in _hist if i.get("statut") == "Planifiée" and _is_lio(i.get("technicien")))
-    _en_retard = sum(1 for i in _hist if i.get("statut") == "En retard" and _is_lio(i.get("technicien")))
-    _realisees = [i for i in _hist if i.get("statut") == "Réalisée" and _is_lio(i.get("technicien"))]
+    _mine      = [i for i in _hist if _mmatch(i)]
+    _a_faire   = sum(1 for i in _mine if i.get("statut") == "Planifiée")
+    _en_retard = sum(1 for i in _mine if i.get("statut") == "En retard")
+    _realisees = [i for i in _mine if i.get("statut") == "Réalisée"]
     _real_mois = sum(1 for i in _realisees if (i.get("date_realisee") or "").startswith(_mois))
     _durees    = [i.get("duree_reelle") for i in _realisees if i.get("duree_reelle")]
     _tmoyen    = round(sum(_durees) / len(_durees) * 60) if _durees else None
     _presc     = sum(1 for i in _realisees if i.get("type") in ("Prédictive", "Préventive conditionnelle"))
     _ppresc    = round(_presc / len(_realisees) * 100) if _realisees else None
 
+    # Référent de la machine + sa disponibilité
     try:
         _eq = nc.get_equipe()
     except Exception:
         _eq = []
-    _me = next((t for t in _eq if _is_lio(f"{t.get('prenom','')} {t.get('nom','')}")), None)
+    _rl = _ref_nom.lower()
+    _me = next((t for t in _eq
+                if f"{t.get('prenom','')} {t.get('nom','')}".strip().lower() == _rl
+                or (t.get('nom') and t.get('nom').lower() in _rl)), None)
     _heures = _me.get("heures_restantes") if _me else None
     _dispo  = (_me.get("disponibilite") if _me else None) or "—"
 
-    _p17_plan = sorted(
-        [i for i in _hist if "P-17" in (i.get("machine") or "") and i.get("statut") == "Planifiée"],
-        key=lambda i: i.get("date") or "9999-99-99")
-    _prochaine = _p17_plan[0] if _p17_plan else None
+    _plan = sorted([i for i in _mine if i.get("statut") == "Planifiée"],
+                   key=lambda i: i.get("date") or "9999-99-99")
+    _prochaine = _plan[0] if _plan else None
 
     try:
-        _pieces = nc.get_pieces(machine_id="P-17")
+        _pieces = nc.get_pieces(machine_id=_sel)
     except Exception:
         _pieces = []
     try:
@@ -154,20 +179,21 @@ with tab_dash:
     </style>
     """, unsafe_allow_html=True)
 
-    # ── Héros P-17 ────────────────────────────────────────────────────────────
-    _bg = STATUS_BG[r_status]
-    _col = STATUS_COLOR[r_status]
+    # ── Héros machine sélectionnée ────────────────────────────────────────────
+    _bg = STATUS_BG.get(_stat, "#f1f5f9")
+    _col = STATUS_COLOR.get(_stat, "#475569")
+    _live_tag = "surveillance temps réel" if _live else "suivi GMAO"
     _proch_txt = _prochaine['titre'] if _prochaine else "Aucune intervention planifiée"
     _proch_date = f"📅 {_prochaine.get('date')}" if _prochaine and _prochaine.get('date') else ""
     st.markdown(
         f'<div class="rf-hero">'
-        f'<div><div style="font-size:0.82rem;color:#64748b;">Pompe P-17 · surveillance temps réel</div>'
+        f'<div><div style="font-size:0.82rem;color:#64748b;">{_mnom} · {_munite} · réf. {_ref_nom} · {_live_tag}</div>'
         f'<div style="display:flex;align-items:baseline;gap:10px;margin-top:6px;">'
-        f'<span style="font-size:2.8rem;font-weight:800;color:#0f172a;line-height:1;">{c_rul}</span>'
+        f'<span style="font-size:2.8rem;font-weight:800;color:#0f172a;line-height:1;">{_rul_val}</span>'
         f'<span style="color:#64748b;">jours de RUL</span>'
-        f'<span class="rf-pill" style="background:{_bg};color:{_col};">{r_status}</span></div>'
+        f'<span class="rf-pill" style="background:{_bg};color:{_col};">{_stat}</span></div>'
         f'<div style="height:6px;background:#eef1f5;border-radius:20px;margin-top:12px;width:250px;overflow:hidden;">'
-        f'<div style="width:{max(3, int(rul_pct * 100))}%;height:100%;background:{_col};"></div></div></div>'
+        f'<div style="width:{max(3, int(_rul_pct_sel * 100))}%;height:100%;background:{_col};"></div></div></div>'
         f'<div style="border-left:1px solid #eef1f5;padding-left:22px;min-width:230px;">'
         f'<div style="font-size:0.82rem;color:#64748b;">Prochaine intervention</div>'
         f'<div style="font-size:1rem;font-weight:600;color:#0f172a;margin-top:3px;">{_proch_txt}</div>'
@@ -190,7 +216,7 @@ with tab_dash:
         _tile("✅", "Réalisées ce mois", _real_mois, "#166534"),
         _tile("⏱", "Temps moyen", _tm),
         _tile("💡", "Part prescriptive", _pp, "#2563eb"),
-        _tile("👤", f"Ma dispo · {_dispo}", _hh, "#166534" if _dispo == "Disponible" else "#0f172a"),
+        _tile("👤", f"Dispo réf. · {_dispo}", _hh, "#166534" if _dispo == "Disponible" else "#0f172a"),
     ])
     st.markdown(f'<div class="rf-kpis">{_tiles}</div>', unsafe_allow_html=True)
     st.markdown("")
@@ -210,8 +236,14 @@ with tab_dash:
 
     # ── Courbe RUL (pleine largeur) ───────────────────────────────────────────
     with st.container(border=True):
-        st.markdown('<div class="rf-lab">📈 RUL Pompe P-17 — 30 derniers relevés</div>', unsafe_allow_html=True)
-        _rul_hist = list(st.session_state.history["rul"])
+        if _live:
+            st.markdown(f'<div class="rf-lab">📈 RUL {_mnom} — 30 derniers relevés (temps réel)</div>', unsafe_allow_html=True)
+            _rul_hist = list(st.session_state.history["rul"])
+        else:
+            st.markdown(f'<div class="rf-lab">📈 RUL {_mnom} — tendance estimée (GMAO) · pilote temps réel : P-17</div>', unsafe_allow_html=True)
+            _startv = _rul_val * 1.6
+            _wig = [0, 1, 0, -1]
+            _rul_hist = [max(0, round(_startv + (_rul_val - _startv) * (k / 29) + _wig[k % 4])) for k in range(30)]
         _figr = go.Figure()
         _figr.add_trace(go.Scatter(y=_rul_hist, mode="lines",
                                    line=dict(color="#2a78d6", width=2.5, shape="spline"),
@@ -281,7 +313,7 @@ with tab_dash:
     _cS, _cAl = st.columns(2)
     with _cS:
         with st.container(border=True):
-            st.markdown('<div class="rf-lab">🔩 Stock pièces critiques P-17</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="rf-lab">🔩 Stock pièces critiques {_sel}</div>', unsafe_allow_html=True)
             _crit = [p for p in _pieces if (p.get("stock_actuel") or 0) < (p.get("stock_minimum") or 1)]
             if _crit:
                 for p in _crit:
