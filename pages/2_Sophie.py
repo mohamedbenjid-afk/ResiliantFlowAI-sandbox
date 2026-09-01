@@ -45,7 +45,7 @@ with st.sidebar:
     st.markdown("---")
     st.sidebar.caption("Statut machine : Pompe P-17 (Unité B)")
     st.sidebar.caption("Horodatage système : t = " + str(st.session_state.tick))
-    st.sidebar.caption(f"RUL estimé : {c_rul}h ({r_status})")
+    st.sidebar.caption(f"RUL estimé : {c_rul}j ({r_status})")
 
 # ── TABS ──────────────────────────────────────────────────────────────────────
 tab0, tab1, tab2, tab3 = st.tabs([
@@ -101,11 +101,11 @@ with tab0:
         icon   = "🔴" if statut == "Critique" else ("🟠" if statut == "Alerte" else "🟢")
 
         if statut == "Critique":
-            action = f"⚡ Intervention immédiate — RUL {rul}h, risque panne imminente"
+            action = f"⚡ Intervention immédiate — RUL {rul}j, risque panne imminente"
         elif statut == "Alerte":
-            action = f"⏰ Planifier maintenance sous 48h — RUL {rul}h"
+            action = f"⏰ Planifier maintenance sous 48h — RUL {rul}j"
         else:
-            action = f"✅ Surveillance standard — RUL {rul}h"
+            action = f"✅ Surveillance standard — RUL {rul}j"
 
         st.markdown(
             f'<div style="background:{bg};border-left:4px solid {border};'
@@ -114,7 +114,7 @@ with tab0:
             f'<span style="font-size:1.05rem;">{icon} <b>{nom}</b> '
             f'<span style="color:#64748b;font-size:0.85rem;">({mid}) — {unite}</span></span>'
             f'<span style="color:{color};font-weight:700;border:1px solid {border};'
-            f'border-radius:20px;padding:3px 12px;font-size:0.82rem;">{statut} · {rul}h</span>'
+            f'border-radius:20px;padding:3px 12px;font-size:0.82rem;">{statut} · {rul}j</span>'
             f'</div>'
             f'<div style="font-size:0.85rem;margin-top:6px;color:#374151;">{action}</div>'
             f'</div>',
@@ -157,7 +157,7 @@ with tab1:
 
     # Métriques capteurs actuelles
     col_r, col_s, col_t, col_v = st.columns(4)
-    col_r.metric("⏱ RUL actuel", f"{c_rul}h")
+    col_r.metric("⏱ RUL actuel", f"{c_rul}j")
     col_s.metric("📊 Statut", r_status)
     col_t.metric("🌡 Température", f"{c_temp:.1f}°C")
     col_v.metric("📳 Vibration", f"{c_vib:.2f} mm/s")
@@ -197,7 +197,7 @@ with tab1:
     col_a.markdown(
         f'<div style="background:#f8fafc;border-radius:8px;padding:16px;text-align:center;">'
         f'<div style="font-size:0.8rem;color:#64748b;">RUL projeté</div>'
-        f'<div style="font-size:2rem;font-weight:800;color:#1e293b;">{rul_projete}h</div>'
+        f'<div style="font-size:2rem;font-weight:800;color:#1e293b;">{rul_projete}j</div>'
         f'</div>', unsafe_allow_html=True,
     )
     col_b.markdown(
@@ -297,7 +297,7 @@ with tab1:
                 "impact_eur":    impact,
                 "decision":      decision_label,
                 "resultat_reel": "En attente",
-                "commentaire":   f"RUL projeté {rul_projete}h · Coût intervention {cout_intervention:,}€ · {recommandation}",
+                "commentaire":   f"RUL projeté {rul_projete}j · Coût intervention {cout_intervention:,}€ · {recommandation}",
             })
             st.success(f"✅ Décision enregistrée — {decision_label}")
         except Exception as e:
@@ -462,7 +462,7 @@ with tab2:
                     "cause_racine":  "",
                     "cout":          0.0,
                     "rul_avant":     c_rul,
-                    "observations":  f"Assigné par Sophie — RUL {c_rul}h",
+                    "observations":  f"Assigné par Sophie — RUL {c_rul}j",
                 }
                 try:
                     with st.spinner(f"Affectation de {nom_complet}…"):
