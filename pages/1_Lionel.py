@@ -63,11 +63,15 @@ with st.sidebar:
         if st.button("🔥 Surchauffe", use_container_width=True):
             st.session_state.base_temp = 82.0
             st.session_state.base_vib  = 3.5
+            st.session_state.running = True   # relance le live pour jouer le scénario
+            st.rerun()
     with col_s2:
         if st.button("✅ Normal", use_container_width=True):
             st.session_state.base_temp = 67.0
             st.session_state.base_vib  = 0.8
             st.session_state.base_pres = 4.4
+            st.session_state.running = True
+            st.rerun()
 
     st.markdown("---")
     _refresh_s = st.slider("⏱ Intervalle rafraîchissement K0 (s)", 1, 5,
