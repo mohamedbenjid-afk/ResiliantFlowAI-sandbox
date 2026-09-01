@@ -10,7 +10,7 @@ import streamlit as st
 
 import notion_client as nc
 from agents.agent_lionel import run_agent_lionel
-from shared_state import COMMON_CSS, init_session_state, update_sensors
+from shared_state import COMMON_CSS, init_session_state, update_sensors, RUL_NOMINAL
 from p17_context import P17_CONTEXT
 
 # Lot D — rafraîchissement K0 via fragment si la version de Streamlit le permet
@@ -122,24 +122,9 @@ def _render_k0():
             unsafe_allow_html=True,
         )
 
-    # AI agent quand la machine passe en état Critique.
-    # L'agent est appelé UNE SEULE FOIS à l'entrée en état critique, puis mis en cache.
-    if r_status == "Critique":
-        if st.session_state.get("_agent_status") != "Critique":
-            with st.spinner("🤖 Analyse IA en cours..."):
-                st.session_state["_agent_reco"] = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
-            st.session_state["_agent_status"] = "Critique"
-
-        with st.expander("🤖 Recommandation IA — Agent Lionel", expanded=True):
-            st.markdown(st.session_state.get("_agent_reco", ""))
-            if st.button("🔄 Nouvelle analyse", key="btn_refresh_agent"):
-                with st.spinner("Analyse en cours..."):
-                    st.session_state["_agent_reco"] = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
-                st.rerun()
-    else:
-        # Réinitialise le cache quand on quitte l'état critique
-        st.session_state.pop("_agent_status", None)
-        st.session_state.pop("_agent_reco", None)
+    # NB : la recommandation IA est rendue HORS de ce fragment (voir bloc après
+    # `with tab0`) pour éviter que le rafraîchissement 2 s ne réinitialise le
+    # scroll pendant qu'on lit la reco.
 
     # Trend charts
     st.markdown("---")
@@ -214,6 +199,22 @@ if _HAS_FRAGMENT and st.session_state.running:
 
 with tab0:
     _render_k0()
+
+    # ── Recommandation IA — rendue hors fragment (pas de reset scroll toutes les 2 s)
+    if r_status == "Critique":
+        if st.session_state.get("_agent_status") != "Critique":
+            with st.spinner("🤖 Analyse IA en cours..."):
+                st.session_state["_agent_reco"] = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
+            st.session_state["_agent_status"] = "Critique"
+        with st.expander("🤖 Recommandation IA — Agent Lionel", expanded=True):
+            st.markdown(st.session_state.get("_agent_reco", ""))
+            if st.button("🔄 Nouvelle analyse", key="btn_refresh_agent"):
+                with st.spinner("Analyse en cours..."):
+                    st.session_state["_agent_reco"] = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
+                st.rerun()
+    else:
+        st.session_state.pop("_agent_status", None)
+        st.session_state.pop("_agent_reco", None)
 
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 1 — K1 BRIEFING
@@ -438,11 +439,14 @@ if tab2 is not None:
     else:
         anomalie = "Usure normale"
 
-    # ── Bandeau statut selon niveau d'alerte ─────────────────────────────────
+    # ── Bandeau statut selon niveau d'alerte réel ────────────────────────────
     if r_status == "Critique":
         st.error(f"🔴 **{anomalie} — CRITIQUE** — RUL : {c_rul} j — Intervention immédiate requise")
-    else:
+    elif r_status == "Alerte":
         st.warning(f"🟠 **{anomalie} — ALERTE** — RUL : {c_rul} j — Planifier intervention sous 48h")
+    else:
+        st.info(f"🟢 **État nominal** — RUL : {c_rul} j — Aucune intervention requise. "
+                f"Procédure de référence ci-dessous.")
 
     # Durée et ressources estimées selon type d'anomalie
     duree_map = {
@@ -634,7 +638,7 @@ if tab3 is not None:
                 index=0,
             )
 
-            col_q2, col_q3 = st.columns(2)
+            col_q2, col_q3, col_q4 = st.columns(3)
             with col_q2:
                 # Q2 — Type
                 f_type = st.selectbox(
@@ -647,6 +651,11 @@ if tab3 is not None:
                 f_statut = st.selectbox(
                     "3️⃣  Statut final",
                     ["Réalisée", "En cours", "Planifiée", "Annulée"],
+                )
+            with col_q4:
+                # Durée réelle (alimente le coût / les KPIs)
+                f_duree = st.number_input(
+                    "⏱ Durée réelle (h)", min_value=0.0, max_value=24.0, step=0.5, value=0.0
                 )
 
             # Q4 — Actions
@@ -681,7 +690,7 @@ if tab3 is not None:
                 "technicien":   "Lionel Dumont",
                 "date":         today,
                 "date_realisee": today,
-                "duree_reelle": 0.0,     # non demandé — valeur neutre
+                "duree_reelle": float(f_duree),   # saisi par le technicien
                 "actions":      f_actions,
                 "pieces":       "",
                 "cause_racine": "",
@@ -714,9 +723,9 @@ if tab4 is not None:
 
     def score_alerte(machine: dict) -> float:
         """Calcule un score d'urgence 0–100 (100 = urgence maximale)."""
-        rul  = machine.get("rul_jours") or 72
+        rul  = machine.get("rul_jours") or RUL_NOMINAL
         deg  = machine.get("score_degradation") or 0
-        rul_score = max(0, (1 - rul / 72)) * 60
+        rul_score = max(0, (1 - rul / RUL_NOMINAL)) * 60
         deg_score = (deg / 100) * 40
         return round(rul_score + deg_score, 1)
 
@@ -781,12 +790,15 @@ if tab4 is not None:
                     f'</div>',
                     unsafe_allow_html=True,
                 )
+                _t = m.get("temperature")
+                _v = m.get("vibration")
+                _deg = m.get("score_degradation")
                 st.markdown("")
                 st.markdown(f"**RUL :** {m.get('rul_jours','?')} j")
-                st.markdown(f"**Dégradation :** {m.get('score_degradation', 0)} %")
+                st.markdown(f"**Dégradation :** {f'{_deg:.0f} %' if _deg is not None else 'n/a'}")
                 st.markdown(f"**Statut :** {statut_m}")
-                st.markdown(f"**Température :** {m.get('temperature') or '—'} °C")
-                st.markdown(f"**Vibration :** {m.get('vibration') or '—'} mm/s")
+                st.markdown(f"**Température :** {f'{_t:.1f} °C' if _t is not None else 'n/a'}")
+                st.markdown(f"**Vibration :** {f'{_v:.2f} mm/s' if _v is not None else 'n/a'}")
                 st.markdown(f"**Responsable :** {m.get('responsable','?')}")
 
         with col_mid:
