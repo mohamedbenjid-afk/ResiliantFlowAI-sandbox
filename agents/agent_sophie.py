@@ -1,4 +1,3 @@
-
 """
 agents/agent_sophie.py — Agent d'arbitrage de Sophie (Manager Maintenance)
 Rôle : évaluer l'impact production d'une alerte, arbitrer entre intervention
@@ -252,7 +251,8 @@ def run_agent_sophie(c_rul: int, equipement: str = "Pompe P-17",
     )
  
     messages = [{"role": "user", "content": situation}]
-    while True:
+    max_iterations = 6
+    for _ in range(max_iterations):
         resp = _llm_chat(system=SYSTEM, messages=messages, tools=TOOLS, max_tokens=2000)
         if resp.stop_reason == "end_turn":
             return resp.final_text()
@@ -264,6 +264,24 @@ def run_agent_sophie(c_rul: int, equipement: str = "Pompe P-17",
                                 "content": json.dumps(out, ensure_ascii=False)})
             messages.append({"role": "assistant", "content": resp.content})
             messages.append({"role": "user",      "content": results})
+        else:
+            break
+
+    # Garde-fou : au-delà de max_iterations (ou stop_reason inattendu), on force
+    # une synthèse finale sans outils plutôt que de laisser l'app tourner indéfiniment.
+    messages.append({
+        "role": "user",
+        "content": (
+            "Tu as maintenant assez d'informations pour conclure. Réponds "
+            "directement avec ton analyse et ta recommandation au format "
+            "demandé, sans appeler d'autre outil."
+        ),
+    })
+    resp = _llm_chat(system=SYSTEM, messages=messages, tools=None, max_tokens=2000)
+    return resp.final_text() or (
+        "⚠️ L'agent n'a pas pu conclure son analyse dans le temps imparti. "
+        "Réessaie, ou consulte directement les onglets S0/S2 pour les données brutes."
+    )
  
  
 # ── TEST STANDALONE ───────────────────────────────────────────────────────────
