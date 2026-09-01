@@ -250,12 +250,23 @@ def run_agent_sophie(c_rul: int, equipement: str = "Pompe P-17",
         f"et recommande la meilleure stratégie d'intervention."
     )
  
+    def _est_valide(texte: str) -> bool:
+        """Rejette les réponses où le modèle a recopié un fragment de format
+        interne (appel/résultat d'outil) au lieu de donner une vraie synthèse."""
+        if not texte or len(texte.strip()) < 20:
+            return False
+        artefacts = ("[appel outil]", "[résultat outil]", '"tool_call"')
+        return not any(a in texte.lower() for a in artefacts)
+
     messages = [{"role": "user", "content": situation}]
     max_iterations = 6
     for _ in range(max_iterations):
         resp = _llm_chat(system=SYSTEM, messages=messages, tools=TOOLS, max_tokens=2000)
         if resp.stop_reason == "end_turn":
-            return resp.final_text()
+            texte = resp.final_text()
+            if _est_valide(texte):
+                return texte
+            break  # réponse invalide : on passe directement au repli forcé
         if resp.stop_reason == "tool_use":
             results = []
             for tc in resp.tool_calls():
@@ -267,18 +278,23 @@ def run_agent_sophie(c_rul: int, equipement: str = "Pompe P-17",
         else:
             break
 
-    # Garde-fou : au-delà de max_iterations (ou stop_reason inattendu), on force
-    # une synthèse finale sans outils plutôt que de laisser l'app tourner indéfiniment.
+    # Garde-fou : au-delà de max_iterations (ou réponse invalide/stop_reason
+    # inattendu), on force une synthèse finale sans outils plutôt que de
+    # laisser l'app tourner indéfiniment ou afficher un artefact de format.
     messages.append({
         "role": "user",
         "content": (
             "Tu as maintenant assez d'informations pour conclure. Réponds "
             "directement avec ton analyse et ta recommandation au format "
-            "demandé, sans appeler d'autre outil."
+            "demandé, sans appeler d'autre outil et sans recopier "
+            "d'anciens appels ou résultats d'outils."
         ),
     })
     resp = _llm_chat(system=SYSTEM, messages=messages, tools=None, max_tokens=2000)
-    return resp.final_text() or (
+    texte_final = resp.final_text()
+    if _est_valide(texte_final):
+        return texte_final
+    return (
         "⚠️ L'agent n'a pas pu conclure son analyse dans le temps imparti. "
         "Réessaie, ou consulte directement les onglets S0/S2 pour les données brutes."
     )
