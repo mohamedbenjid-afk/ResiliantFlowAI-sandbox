@@ -80,16 +80,25 @@ c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_pct = update_sensors()
 STATUS_COLOR = {"Nominal": "#166534", "Alerte": "#b45309", "Critique": "#b91c1c"}
 STATUS_BG    = {"Nominal": "#dcfce7", "Alerte": "#fef3c7", "Critique": "#fee2e2"}
 
-# ── TABS — Dashboard d'accueil en premier, puis K0 à K4 ──────────────────────
-_show_k2 = True
-_tabs = st.tabs(["📊 Mon poste", "📡 K0 — Surveillance", "📋 K1 — Briefing",
-                 "🔧 K2 — Procédure", "✅ K3 — Post-intervention", "⚖️ K4 — Arbitrage"])
+# ── TABS — K2 « Procédure » visible uniquement en Alerte/Critique (surchauffe) ─
+_show_k2 = r_status in ("Alerte", "Critique")
+_labels = ["📊 Mon poste", "📡 K0 — Surveillance", "📋 K1 — Briefing"]
+if _show_k2:
+    _labels.append("🔧 K2 — Procédure 🔔")
+_labels += ["✅ K3 — Post-intervention", "⚖️ K4 — Arbitrage"]
+
+_tabs = st.tabs(_labels)
 tab_dash = _tabs[0]
 tab0 = _tabs[1]
 tab1 = _tabs[2]
-tab2 = _tabs[3]
-tab3 = _tabs[4]
-tab4 = _tabs[5]
+if _show_k2:
+    tab2 = _tabs[3]
+    tab3 = _tabs[4]
+    tab4 = _tabs[5]
+else:
+    tab2 = None
+    tab3 = _tabs[3]
+    tab4 = _tabs[4]
 
 # ════════════════════════════════════════════════════════════════════════════════
 # ONGLET DASHBOARD — « Mon poste » (accueil)
