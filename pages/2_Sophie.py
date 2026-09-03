@@ -175,24 +175,25 @@ with tab1:
     # en JOURS — conversion nécessaire avant soustraction (sinon on retire des
     # "jours" en croyant retirer des heures, ce qui fait chuter le RUL ~24x trop vite).
     rul_projete  = max(0, round(c_rul - jours_report / 24, 1))
-    risque_base  = 73
-    impact_base  = 47000
 
-    if rul_projete <= 0:
-        risque = 100
-        impact = round(impact_base * 1.5)
+    # Risque de panne : courbe continue calée sur les seuils déjà utilisés dans
+    # shared_state.py (Nominal > 60j, Critique ≤ 2j) plutôt que des tranches
+    # disjointes avec un plancher artificiel à ~55% même à RUL maximal.
+    # RUL_REF = RUL au-delà duquel le risque est considéré comme quasi nul.
+    RUL_REF = 70
+    ratio   = max(0.0, min(1.0, 1 - rul_projete / RUL_REF))
+    risque  = round(100 * ratio ** 2, 1)
+
+    impact_min, impact_max = 1000, 47000
+    impact = round(impact_min + (impact_max - impact_min) * (risque / 100))
+
+    if risque >= 80:
         niveau = "CRITIQUE"
-    elif rul_projete <= 12:
-        risque = min(100, round(risque_base + (jours_report / 72) * 25, 1))
-        impact = round(impact_base * (1 + jours_report / 48))
+    elif risque >= 50:
         niveau = "ÉLEVÉ"
-    elif rul_projete <= 24:
-        risque = round(risque_base + (jours_report / 72) * 15, 1)
-        impact = round(impact_base * (1 + jours_report / 72))
+    elif risque >= 20:
         niveau = "MODÉRÉ"
     else:
-        risque = round(max(0, risque_base - (rul_projete / 100) * 20), 1)
-        impact = round(impact_base * (1 - (rul_projete - 24) / 200))
         niveau = "FAIBLE"
 
     color_risque = "#b91c1c" if risque >= 70 else ("#b45309" if risque >= 40 else "#166534")
