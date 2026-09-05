@@ -29,6 +29,16 @@ Correctifs v5 (revue Priorités 1-3 + fix bug RUL) :
     masquait à tort un RUL réellement égal à 0 (machine en fin de vie totale),
     ce qui inversait le score de risque (0 au lieu de 100). Le fallback ne
     s'applique désormais que si le champ est réellement absent (None).
+
+Revue finale (validée) :
+  - Priorités 1 à 4 revérifiées champ par champ contre le briefing : conformes.
+  - Point ouvert signalé à Mohamed : le champ "ID Machine" (utilisé pour la
+    déduplication du portfolio dans get_top_equipements_a_risque et exposé
+    dans get_bilan_equipement) n'apparaît pas dans la liste des champs
+    confirmés du briefing. Non bloquant : _text() retourne "" si le champ
+    n'existe pas, et la déduplication retombe alors sur l'extraction du code
+    équipement depuis le nom (ex. "P-17" depuis "Pompe P-17"). À confirmer
+    avec l'équipe si ce champ existe réellement dans la base ESCP.
 """
 
 import os, json
@@ -110,7 +120,7 @@ def get_bilan_equipement(nom: str) -> dict:
     rul_jours = round(_num(p.get("RUL nominal (h)")) / 24, 1)
     return {
         "machine":               _text(p.get("Équipement")),
-        "id_machine":            _text(p.get("ID Machine")),
+        "id_machine":            _text(p.get("ID Machine")),  # à confirmer : champ non listé dans le briefing
         "type":                  _text(p.get("Type")),
         "statut":                _text(p.get("Statut")),
         "rul_jours":             rul_jours,
@@ -319,7 +329,7 @@ def get_top_equipements_a_risque() -> dict:
 
         ranking.append({
             "machine":               nom,
-            "id_machine":            _text(p.get("ID Machine")),
+            "id_machine":            _text(p.get("ID Machine")),  # à confirmer : champ non listé dans le briefing
             "unite":                 _text(p.get("Ligne de production")),
             "responsable":           _text(p.get("Technicien référent")),
             "statut":                statut,
