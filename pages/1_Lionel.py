@@ -16,6 +16,34 @@ from p17_context import P17_CONTEXT
 # Lot D — rafraîchissement K0 via fragment si la version de Streamlit le permet
 _HAS_FRAGMENT = hasattr(st, "fragment")
 
+
+def _fallback_reco_lionel(c_temp, c_vib, c_pres, c_rul) -> str:
+    """Prescription de repli si le LLM (1min.ai) est indisponible.
+
+    Évite tout crash de la page : on affiche la séquence corrective P-17
+    standard (mêmes gestes que la démo lunettes), au lieu de propager
+    l'exception de l'agent.
+    """
+    cout = P17_CONTEXT.get("cout_arret_eur_h", 6500)
+    return f"""### 🔧 DÉCISION — Intervention corrective immédiate P-17
+
+**Fenêtre :** sous 24 h (RUL estimé {c_rul} j — seuil critique franchi)
+
+**Diagnostic :** surchauffe ({c_temp} °C) et vibration élevée ({c_vib} mm/s) → dégradation du roulement **6205-2RS** en fin de vie.
+
+**Procédure (≈ 35 min) :**
+1. Consigner (LOTO) : ouvrir le disjoncteur **Q-17A**
+2. Isoler : fermer les vannes **V-17A** (amont) et **V-17B** (aval)
+3. Purger le carter via le point **PT-17**
+4. Remplacer le roulement **6205-2RS** (kit **B-07**)
+5. Graisser **Mobilux EP2** — couple carter **45 N·m**
+6. Redémarrer, vérifier **débit 45 m³/h** et **vibration < 1.5 mm/s**
+
+**Sécurité :** gants + lunettes + chaussures S3, cadenas LOTO obligatoire.
+
+**Coût d'arrêt évité :** ~{cout} €/h.
+"""
+
 # ── PAGE CONFIG ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Lionel — Terrain", page_icon="🔧", layout="wide")
 st.markdown(COMMON_CSS, unsafe_allow_html=True)
@@ -482,8 +510,16 @@ with tab0:
     # ── Recommandation IA — rendue hors fragment (pas de reset scroll toutes les 2 s)
     if r_status == "Critique":
         if st.session_state.get("_agent_status") != "Critique":
-            with st.spinner("🤖 Analyse IA en cours..."):
-                st.session_state["_agent_reco"] = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
+            # L'agent appelle le LLM 1min.ai : si l'API échoue (quota, panne…),
+            # on bascule sur une prescription de repli au lieu de planter la page.
+            try:
+                with st.spinner("🤖 Analyse IA en cours..."):
+                    st.session_state["_agent_reco"] = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
+                st.session_state["_agent_reco_fallback"] = False
+            except Exception as _agent_err:
+                st.session_state["_agent_reco"] = _fallback_reco_lionel(c_temp, c_vib, c_pres, c_rul)
+                st.session_state["_agent_reco_fallback"] = True
+                st.session_state["_agent_reco_error"] = str(_agent_err)[:300]
             st.session_state["_agent_status"] = "Critique"
             # Notification email au technicien référent — UNE SEULE FOIS par épisode critique
             if not st.session_state.get("_email_sent"):
@@ -497,6 +533,8 @@ with tab0:
                     st.session_state["_email_result"] = {"ok": False, "error": str(e)}
                 st.session_state["_email_sent"] = True
         with st.expander("🤖 Recommandation IA — Agent Lionel", expanded=True):
+            if st.session_state.get("_agent_reco_fallback"):
+                st.info("ℹ️ IA momentanément indisponible — prescription standard P-17 affichée.")
             st.markdown(st.session_state.get("_agent_reco", ""))
             if st.button("🔄 Nouvelle analyse", key="btn_refresh_agent"):
                 with st.spinner("Analyse en cours..."):
