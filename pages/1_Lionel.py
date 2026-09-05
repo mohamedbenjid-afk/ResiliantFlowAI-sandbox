@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import notion_client as nc
-from agents.agent_lionel import run_agent_lionel
+from agents.agent_lionel import run_agent_lionel, resumer_journee_lionel
 from shared_state import COMMON_CSS, init_session_state, update_sensors, RUL_NOMINAL
 from p17_context import P17_CONTEXT
 
@@ -114,23 +114,115 @@ STATUS_BG    = {"Nominal": "#dcfce7", "Alerte": "#fef3c7", "Critique": "#fee2e2"
 
 # ── TABS — K2 « Procédure » visible uniquement en Alerte/Critique (surchauffe) ─
 _show_k2 = r_status in ("Alerte", "Critique")
-_labels = ["📊 Mon poste", "📡 K0 — Surveillance", "📋 K1 — Briefing"]
+_labels = ["☀️ Ma journée", "📊 Mon poste", "📡 K0 — Surveillance", "📋 K1 — Briefing"]
 if _show_k2:
     _labels.append("🔧 K2 — Procédure 🔔")
 _labels += ["✅ K3 — Post-intervention", "⚖️ K4 — Arbitrage"]
 
 _tabs = st.tabs(_labels)
-tab_dash = _tabs[0]
-tab0 = _tabs[1]
-tab1 = _tabs[2]
+tab_jour = _tabs[0]
+tab_dash = _tabs[1]
+tab0 = _tabs[2]
+tab1 = _tabs[3]
 if _show_k2:
-    tab2 = _tabs[3]
-    tab3 = _tabs[4]
-    tab4 = _tabs[5]
+    tab2 = _tabs[4]
+    tab3 = _tabs[5]
+    tab4 = _tabs[6]
 else:
     tab2 = None
-    tab3 = _tabs[3]
-    tab4 = _tabs[4]
+    tab3 = _tabs[4]
+    tab4 = _tabs[5]
+
+# ════════════════════════════════════════════════════════════════════════════════
+# ONGLET « ☀️ Ma journée » — brief matinal (agent) + choix traiter / reporter
+# ════════════════════════════════════════════════════════════════════════════════
+_PORDER = {"P1 - Critique": 0, "P2 - Haute": 1, "P3 - Normale": 2, "P4 - Basse": 3}
+
+_FALLBACK_INTERV = [
+    {"titre": "Remplacement roulement P-17 (surchauffe)", "machine": "P-17", "type": "Corrective",
+     "statut": "Planifiée", "priorite": "P1 - Critique", "duree_estimee": 0.6, "loto_requis": "Oui",
+     "composants": "Roulement 6205-2RS (casier B-07)", "habilitations": ["Mécanique"],
+     "description": "Surchauffe + vibration élevée → roulement 6205-2RS en fin de vie."},
+    {"titre": "Contrôle vibratoire pompe V-08", "machine": "V-08", "type": "Préventive conditionnelle",
+     "statut": "Planifiée", "priorite": "P2 - Haute", "duree_estimee": 0.3, "loto_requis": "Non",
+     "habilitations": ["Mécanique"], "description": "Relevé vibratoire + analyse spectrale suite alerte capteur."},
+    {"titre": "Graissage préventif convoyeur C-12", "machine": "C-12", "type": "Préventive systématique",
+     "statut": "Planifiée", "priorite": "P3 - Normale", "duree_estimee": 0.4, "loto_requis": "Non",
+     "habilitations": ["Mécanique"], "description": "Graissage périodique des paliers + contrôle courroie."},
+]
+
+
+def _charger_mes_interventions():
+    try:
+        items = nc.get_historique(limit=50) or []
+        mine = [i for i in items
+                if "lionel" in str(i.get("technicien", "")).lower()
+                and str(i.get("statut", "")) in ("Planifiée", "En cours")]
+        return mine or _FALLBACK_INTERV
+    except Exception:
+        return _FALLBACK_INTERV
+
+
+def _charger_arbitrages_sophie():
+    try:
+        pages = nc._query_db(nc.DB_IDS["decisions_sophie"], None, None) or []
+        arbs = []
+        for p in pages[:5]:
+            t = nc._prop(p, "Décision") or nc._prop(p, "Titre") or nc._prop(p, "Name") or ""
+            if t:
+                arbs.append(str(t))
+        return arbs
+    except Exception:
+        return []
+
+
+with tab_jour:
+    st.subheader("☀️ Ma journée — " + datetime.date.today().strftime("%d/%m/%Y"))
+    st.caption("Ton brief du matin, tes interventions affectées et les arbitrages de Sophie.")
+
+    if "mes_interventions" not in st.session_state:
+        st.session_state["mes_interventions"] = _charger_mes_interventions()
+    _interv = sorted(st.session_state["mes_interventions"],
+                     key=lambda i: _PORDER.get(i.get("priorite", ""), 9))
+
+    if "arbitrages_sophie" not in st.session_state:
+        st.session_state["arbitrages_sophie"] = _charger_arbitrages_sophie() or [
+            "P-17 priorisée en P1 — arrêt/bascule à valider avec Sophie avant intervention."
+        ]
+    _arbitrages = st.session_state["arbitrages_sophie"]
+
+    _cbrief, _crefr = st.columns([4, 1])
+    with _crefr:
+        if st.button("🔄 Brief", use_container_width=True):
+            st.session_state.pop("_brief_jour", None)
+    if "_brief_jour" not in st.session_state:
+        with st.spinner("🤖 L'agent prépare ton brief du matin…"):
+            try:
+                st.session_state["_brief_jour"] = resumer_journee_lionel(_interv, _arbitrages)
+            except Exception as _e:
+                st.session_state["_brief_jour"] = "_(brief indisponible : " + str(_e)[:80] + ")_"
+    st.markdown(st.session_state["_brief_jour"])
+
+    st.divider()
+    st.markdown("#### 🗂️ Mes interventions — je traite ou je reporte")
+    for _idx, _it in enumerate(_interv):
+        with st.container(border=True):
+            _c1, _c2, _c3 = st.columns([5, 2, 2])
+            _loto = str(_it.get("loto_requis", "")).lower().startswith("o")
+            _c1.markdown(
+                f"**{_it.get('titre','?')}**  \n"
+                f"{_it.get('machine','?')} · {_it.get('type','?')} · ~{_it.get('duree_estimee','?')} h · "
+                f"{'🔒 LOTO' if _loto else 'sans LOTO'}"
+            )
+            _c2.markdown(f"**{_it.get('priorite','?')}**")
+            if _c3.button("Traiter", key=f"trait_{_idx}", use_container_width=True):
+                st.session_state["intervention_active"] = _it
+                st.success("Sélectionnée → onglet 🔧 Procédure")
+            if _c3.button("Reporter", key=f"rep_{_idx}", use_container_width=True):
+                st.info("Report transmis à Sophie (arbitrage).")
+    if st.session_state.get("intervention_active"):
+        st.caption("Intervention en cours : **"
+                   + st.session_state["intervention_active"].get("titre", "") + "**")
 
 # ════════════════════════════════════════════════════════════════════════════════
 # ONGLET DASHBOARD — « Mon poste » (accueil)
