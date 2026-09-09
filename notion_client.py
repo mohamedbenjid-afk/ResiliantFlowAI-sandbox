@@ -527,7 +527,7 @@ def create_decision(data: dict) -> dict:
     body = {
         "parent": {"database_id": DB_IDS["decisions_sophie"]},
         "properties": {
-            "Équipement": {
+            "Nom": {"title": [{"text": {"content": f"{data.get('equipement','P-17')} — {data.get('scenario','Décision')}"}}]}, "Équipement": {
                 "rich_text": [{"text": {"content": data.get("equipement", "P-17")}}]
             },
             "Scénario simulé": {
