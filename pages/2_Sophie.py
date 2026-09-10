@@ -286,10 +286,14 @@ with tab1:
 
     # ── Enregistrement de la décision (US-S7) ────────────────────────────────
     st.markdown("---")
-    if st.button("💾 Enregistrer ma décision", use_container_width=True):
+    st.markdown("##### Quelle décision valides-tu ?")
+    st.caption(
+        "Le curseur ci-dessus sert à explorer des scénarios. La décision "
+        "n'est enregistrée que si tu cliques explicitement sur un des deux boutons ci-dessous."
+    )
+
+    def _enregistrer_decision(decision_label, scenario_label):
         try:
-            decision_label = "Intervention maintenue" if jours_report == 0 else "Reportée"
-            scenario_label = "Intervention immédiate" if jours_report == 0 else f"Report {jours_report}h"
             nc.create_decision({
                 "equipement":    "P-17",
                 "date_heure":    datetime.datetime.now().isoformat(),
@@ -321,6 +325,19 @@ with tab1:
                     st.code(getattr(resp, "text", "(vide)"), language="json")
                 else:
                     st.code(repr(e))
+
+    col_dec1, col_dec2 = st.columns(2)
+    with col_dec1:
+        if st.button("✅ Valider l'intervention immédiate", use_container_width=True, type="primary"):
+            _enregistrer_decision("Intervention maintenue", "Intervention immédiate")
+    with col_dec2:
+        report_disabled = jours_report == 0
+        label_report = (
+            f"⏳ Valider un report de {jours_report}h" if not report_disabled
+            else "⏳ Valider un report (déplace le curseur d'abord)"
+        )
+        if st.button(label_report, use_container_width=True, disabled=report_disabled):
+            _enregistrer_decision("Reportée", f"Report {jours_report}h")
 
     st.markdown("---")
     if st.button("▶️ Lancer l'analyse d'impact IA", use_container_width=True, type="primary"):
