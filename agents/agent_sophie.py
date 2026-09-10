@@ -1,305 +1,380 @@
 """
-agents/agent_sophie.py — Agent d'arbitrage de Sophie (Manager Maintenance)
-Rôle : évaluer l'impact production d'une alerte, arbitrer entre intervention
-       immédiate et report, optimiser l'assignation des techniciens.
- 
-Intégration dans pages/2_Sophie.py :
-    from agents.agent_sophie import run_agent_sophie
-    arbitrage = run_agent_sophie(c_rul, equipement="Pompe P-17")
-"""
- 
-import os, json
-import requests as _requests
- 
-import sys, os as _os
-sys.path.append(_os.path.join(_os.path.dirname(__file__), '..'))
-from llm_client import chat as _llm_chat
- 
- 
-def _get_secret(key):
-    try:
-        import streamlit as st
-        return st.secrets[key]
-    except Exception:
-        return os.environ.get(key, "")
- 
- 
-# ── CLIENT NOTION via requests ────────────────────────────────────────────────
-def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None) -> list:
-    token = _get_secret("NOTION_TOKEN")
-    url   = f"https://api.notion.com/v1/databases/{database_id}/query"
-    headers = {
-        "Authorization":  f"Bearer {token}",
-        "Notion-Version": "2022-06-28",
-        "Content-Type":   "application/json",
-    }
-    payload = {}
-    if filter_obj: payload["filter"] = filter_obj
-    if sorts:      payload["sorts"]  = sorts
- 
-    results, has_more, cursor = [], True, None
-    while has_more:
-        if cursor:
-            payload["start_cursor"] = cursor
-        resp = _requests.post(url, headers=headers, json=payload, timeout=15)
-        if not resp.ok:
-            return []
-        data = resp.json()
-        results.extend(data.get("results", []))
-        has_more = data.get("has_more", False)
-        cursor   = data.get("next_cursor")
-    return results
- 
- 
-# ── IDs des bases Notion ESCP (corrigés) ─────────────────────────────────────
-DB_ORDRES_FAB = "687e40c2-a3ff-4de0-be55-20cf411f5dd6"   # Ordres de fabrication
-DB_HISTORIQUE = "94babab5-03bb-4c4d-9053-08d5bff301e3"   # Historique & plan de maintenance
-DB_PIECES     = "ef896795-bd1a-4b20-a8ea-f121c9f846ff"   # Pièces détachées
-DB_EQUIPE     = "3856b2ff-be3d-8151-8b3f-ee79dee0bc2b"   # Équipe maintenance
- 
- 
-# ── HELPERS ───────────────────────────────────────────────────────────────────
-def _text(prop):
-    if not prop: return ""
-    t = prop.get("type")
-    if t == "title":        return "".join(r["plain_text"] for r in prop.get("title", []))
-    if t == "rich_text":    return "".join(r["plain_text"] for r in prop.get("rich_text", []))
-    if t == "select":       s = prop.get("select"); return s["name"] if s else ""
-    if t == "multi_select": return ", ".join(o["name"] for o in prop.get("multi_select", []))
-    if t == "number":       v = prop.get("number"); return v if v is not None else ""
-    if t == "date":         d = prop.get("date"); return d["start"] if d else ""
-    return ""
- 
-def _p(page): return page.get("properties", {})
- 
- 
-# ── OUTILS PLANIFICATION ──────────────────────────────────────────────────────
- 
-def get_impact_production(equipement: str) -> dict:
-    """OF en cours et planifiés sur cet équipement avec coût d'arrêt."""
-    res = _notion_query(
-        DB_ORDRES_FAB,
-        filter_obj={"property": "Équipement concerné", "rich_text": {"contains": equipement}},
-        sorts=[{"property": "Priorité", "direction": "ascending"}]
-    )
-    of_en_cours, of_planifies = [], []
-    for page in res:
-        p = _p(page)
-        statut = _text(p.get("Statut"))
-        entry = {
-            "reference":       _text(p.get("Ordre de Fabrication")),
-            "statut":          statut,
-            "produit":         _text(p.get("Produit fabriqué")),
-            "ligne":           _text(p.get("Ligne de production")),
-            "qte_prevue":      _text(p.get("Quantité cible")),
-            "qte_realisee":    _text(p.get("Quantité réalisée")),
-            "cout_arret_eur":  _text(p.get("Coût arrêt horaire (€)")),
-            "date_fin_prevue": _text(p.get("Date fin prévue")),
-            "responsable":     _text(p.get("Responsable OF")),
-            "impact_rul":      _text(p.get("Impact RUL")),
-        }
-        if statut == "En cours":
-            of_en_cours.append(entry)
-        else:
-            of_planifies.append(entry)
- 
-    return {
-        "of_en_cours":  of_en_cours  or [{"info": "Aucun OF en cours sur cet équipement"}],
-        "of_planifies": of_planifies or [{"info": "Aucun OF planifié"}],
-        "total_of":     len(res),
-        "cout_arret_total_eur": sum(float(o.get("cout_arret_eur") or 0) for o in of_en_cours),
-    }
- 
- 
-def get_charge_techniciens(equipement: str) -> list:
-    """Disponibilité et charge de travail de l'équipe maintenance."""
-    res = _notion_query(DB_EQUIPE)
-    equipe = []
-    for page in res:
-        p = _p(page)
-        equipe.append({
-            "technicien":       _text(p.get("Nom Technicien")),
-            "prenom":           _text(p.get("Prénom")),
-            "role":             _text(p.get("Rôle")),
-            "specialite":       _text(p.get("Spécialité")),
-            "habilitations":    _text(p.get("Habilitations")),
-            "disponibilite":    _text(p.get("Disponibilité")),
-            "charge_h_sem":     _text(p.get("Charge horaire (h/sem)")),
-            "heures_restantes": _text(p.get("Heures restantes")),
-            "zone":             _text(p.get("Zone assignée")),
-        })
-    return equipe or [{"info": "Aucun technicien trouvé"}]
- 
- 
-def get_fenetre_maintenance(equipement: str) -> list:
-    """Interventions planifiées sur cet équipement — pour trouver un créneau optimal."""
-    res = _notion_query(
-        DB_HISTORIQUE,
-        filter_obj={"and": [
-            {"property": "Équipement",  "rich_text": {"contains": equipement}},
-            {"property": "Statut",      "select":    {"equals": "Planifiée"}},
-        ]},
-        sorts=[{"property": "Date planifiée", "direction": "ascending"}]
-    )
-    return [
-        {
-            "titre":             _text(_p(p).get("Intervention")),
-            "type":              _text(_p(p).get("Type d'intervention")),
-            "date":              _text(_p(p).get("Date planifiée")),
-            "duree_estimee_h":   _text(_p(p).get("Durée estimée (h)")),
-            "technicien":        _text(_p(p).get("Technicien assigné")),
-            "cout_eur":          _text(_p(p).get("Coût estimé (€)")),
-        }
-        for p in res
-    ] or [{"info": "Aucune intervention planifiée — fenêtre à créer"}]
- 
- 
-def get_pieces_critiques_manquantes(equipement: str) -> list:
-    """Pièces en rupture ou stock bas pouvant bloquer une intervention immédiate."""
-    res = _notion_query(
-        DB_PIECES,
-        filter_obj={"and": [
-            {"property": "Équipements compatibles", "rich_text": {"contains": equipement}},
-            {"property": "Statut stock",            "select":    {"does_not_equal": "En stock"}},
-        ]}
-    )
-    return [
-        {
-            "designation":     _text(_p(p).get("Composant")),
-            "reference":       _text(_p(p).get("Réf. fabricant")),
-            "statut_stock":    _text(_p(p).get("Statut stock")),
-            "stock_actuel":    _text(_p(p).get("Stock actuel")),
-            "stock_minimum":   _text(_p(p).get("Stock minimum (seuil alerte)")),
-            "delai_livraison": _text(_p(p).get("Délai réappro (jours)")),
-            "fournisseur":     _text(_p(p).get("Fournisseur principal")),
-            "notes":           _text(_p(p).get("Notes")),
-        }
-        for p in res
-    ] or [{"info": "Aucune pièce critique manquante — stock OK pour intervention"}]
- 
- 
-# ── OUTILS DÉCLARÉS À L'AGENT ─────────────────────────────────────────────────
-TOOLS = [
-    {
-        "name": "get_impact_production",
-        "description": "Récupère les OF en cours et planifiés sur cet équipement : coût d'arrêt, avancement, dates de fin. Permet d'évaluer le risque financier d'un arrêt.",
-        "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
-    },
-    {
-        "name": "get_charge_techniciens",
-        "description": "Analyse la disponibilité et la charge de travail de l'équipe maintenance. Permet de trouver le technicien disponible avec les bonnes habilitations.",
-        "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
-    },
-    {
-        "name": "get_fenetre_maintenance",
-        "description": "Liste les interventions planifiées avec leurs dates et durées. Permet de trouver un créneau d'arrêt optimal qui minimise l'impact production.",
-        "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
-    },
-    {
-        "name": "get_pieces_critiques_manquantes",
-        "description": "Identifie les pièces en rupture ou stock bas qui pourraient bloquer une intervention immédiate. Essentiel pour l'arbitrage du timing.",
-        "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
-    }
-]
- 
- 
-def _execute(name, inputs):
-    if name == "get_impact_production":           return get_impact_production(inputs["equipement"])
-    if name == "get_charge_techniciens":          return get_charge_techniciens(inputs["equipement"])
-    if name == "get_fenetre_maintenance":         return get_fenetre_maintenance(inputs["equipement"])
-    if name == "get_pieces_critiques_manquantes": return get_pieces_critiques_manquantes(inputs["equipement"])
-    return {"erreur": f"Outil inconnu : {name}"}
- 
- 
-# ── PROMPT SYSTÈME ────────────────────────────────────────────────────────────
-SYSTEM = """Tu es l'assistant de Sophie, Manager Maintenance de l'Unité B.
-Tu analyses les alertes machine pour l'aider à prendre des décisions de planification.
- 
-Ton rôle : arbitrer entre intervention immédiate et report, en tenant compte de :
-- L'impact sur la production en cours (OF actifs, coût d'arrêt)
-- La disponibilité des techniciens et leur charge
-- La disponibilité des pièces nécessaires
-- Les fenêtres de maintenance déjà planifiées
- 
-Format de réponse attendu :
-1. **Situation** : résumé de l'alerte et des contraintes identifiées
-2. **Option A — Intervention immédiate** : avantages, risques, coût estimé
-3. **Option B — Report planifié** : date suggérée, conditions requises, risque RUL
-4. **Recommandation** : quelle option privilégier et pourquoi
-5. **Actions à lancer maintenant** : liste concrète (contacter Lionel, commander pièce, etc.)
- 
-Sois factuel. Chiffre les risques financiers quand tu le peux.
-"""
- 
- 
-# ── FONCTION PRINCIPALE ───────────────────────────────────────────────────────
-def run_agent_sophie(c_rul: int, equipement: str = "Pompe P-17",
-                     c_temp: float = None, c_vib: float = None) -> str:
-    """
-    Lance l'agent Sophie avec le RUL courant et le contexte machine.
-    Retourne l'arbitrage planification en texte Markdown.
-    """
-    details = ""
-    if c_temp: details += f"\n- Température : {c_temp:.1f}°C"
-    if c_vib:  details += f"\n- Vibration   : {c_vib:.2f} mm/s"
- 
-    situation = (
-        f"ALERTE MAINTENANCE — {equipement}\n"
-        f"- RUL estimé : {c_rul}j{details}\n\n"
-        f"Analyse l'impact production, la disponibilité des ressources "
-        f"et recommande la meilleure stratégie d'intervention."
-    )
- 
-    def _est_valide(texte: str) -> bool:
-        """Rejette les réponses où le modèle a recopié un fragment de format
-        interne (appel/résultat d'outil) au lieu de donner une vraie synthèse."""
-        if not texte or len(texte.strip()) < 20:
-            return False
-        artefacts = ("[appel outil]", "[résultat outil]", '"tool_call"')
-        return not any(a in texte.lower() for a in artefacts)
+utils/pdf_sophie.py
+Générateur de Rapport Hebdomadaire — Agent Sophie (Manager Maintenance)
+Format : A4, ReportLab Platypus — même charte que utils/pdf_codir.py
 
-    messages = [{"role": "user", "content": situation}]
-    max_iterations = 6
-    for _ in range(max_iterations):
-        resp = _llm_chat(system=SYSTEM, messages=messages, tools=TOOLS, max_tokens=2000)
-        if resp.stop_reason == "end_turn":
-            texte = resp.final_text()
-            if _est_valide(texte):
-                return texte
-            break  # réponse invalide : on passe directement au repli forcé
-        if resp.stop_reason == "tool_use":
-            results = []
-            for tc in resp.tool_calls():
-                out = _execute(tc["name"], tc["input"])
-                results.append({"type": "tool_result", "tool_use_id": tc.get("id", "tc0"),
-                                "content": json.dumps(out, ensure_ascii=False)})
-            messages.append({"role": "assistant", "content": resp.content})
-            messages.append({"role": "user",      "content": results})
-        else:
-            break
+Usage:
+    from utils.pdf_sophie import generate_sophie_pdf
+    pdf_bytes = generate_sophie_pdf(ctx)
+    st.download_button("Télécharger", pdf_bytes, file_name="Rapport_Sophie.pdf")
 
-    # Garde-fou : au-delà de max_iterations (ou réponse invalide/stop_reason
-    # inattendu), on force une synthèse finale sans outils plutôt que de
-    # laisser l'app tourner indéfiniment ou afficher un artefact de format.
-    messages.append({
-        "role": "user",
-        "content": (
-            "Tu as maintenant assez d'informations pour conclure. Réponds "
-            "directement avec ton analyse et ta recommandation au format "
-            "demandé, sans appeler d'autre outil et sans recopier "
-            "d'anciens appels ou résultats d'outils."
-        ),
-    })
-    resp = _llm_chat(system=SYSTEM, messages=messages, tools=None, max_tokens=2000)
-    texte_final = resp.final_text()
-    if _est_valide(texte_final):
-        return texte_final
-    return (
-        "⚠️ L'agent n'a pas pu conclure son analyse dans le temps imparti. "
-        "Réessaie, ou consulte directement les onglets S0/S2 pour les données brutes."
+ctx attendu (voir pages/2_Sophie.py, TAB 3 — S3 RAPPORT HEBDOMADAIRE) :
+    {
+        "semaine":       int,
+        "machine":       str,   # ex "Pompe P-17"
+        "rul":           int/float,
+        "statut":        str,   # "Nominal" / "Alerte" / "Critique"
+        "historique":    list[dict]  # titre, type, statut, date, technicien, duree_estimee, cout_estime
+        "pieces_stock":  list[dict]  # designation, statut_stock, stock_actuel, stock_minimum
+    }
+"""
+
+import io
+from datetime import datetime, date
+
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import cm
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.colors import HexColor, white
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer
+)
+
+# ── PALETTE (identique à pdf_codir.py) ─────────────────────────────────────────
+BLEU        = HexColor("#1e3a5f")
+BLEU_MED    = HexColor("#2563eb")
+BLEU_CLAIR  = HexColor("#dbeafe")
+AMBRE       = HexColor("#d97706")
+VERT        = HexColor("#16a34a")
+VERT_CLAIR  = HexColor("#dcfce7")
+ROUGE       = HexColor("#dc2626")
+ROUGE_CLAIR = HexColor("#fee2e2")
+GRIS_F      = HexColor("#374151")
+GRIS_M      = HexColor("#6b7280")
+GRIS_C      = HexColor("#f3f4f6")
+GRIS_TC     = HexColor("#f9fafb")
+
+STATUT_COLOR = {"Nominal": VERT, "Alerte": AMBRE, "Critique": ROUGE}
+STATUT_BG    = {"Nominal": VERT_CLAIR, "Alerte": HexColor("#fef3c7"), "Critique": ROUGE_CLAIR}
+
+W, H = A4
+
+
+# ── TEMPLATE DE PAGE ────────────────────────────────────────────────────────────
+class _PT:
+    def __init__(self, ref, generated_at):
+        self.ref = ref
+        self.generated_at = generated_at
+
+    def __call__(self, canvas, doc):
+        canvas.saveState()
+        canvas.setFillColor(BLEU)
+        canvas.rect(0, H - 1.4 * cm, W, 1.4 * cm, fill=1, stroke=0)
+        canvas.setFont("Helvetica-Bold", 9)
+        canvas.setFillColor(white)
+        canvas.drawString(1.8 * cm, H - 0.95 * cm, "RAPPORT HEBDOMADAIRE — AGENT SOPHIE")
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(AMBRE)
+        canvas.drawRightString(W - 1.8 * cm, H - 0.95 * cm, self.ref)
+        canvas.setFillColor(GRIS_C)
+        canvas.rect(0, 0, W, 1.0 * cm, fill=1, stroke=0)
+        canvas.setFont("Helvetica", 7.5)
+        canvas.setFillColor(GRIS_M)
+        canvas.drawCentredString(
+            W / 2, 0.35 * cm,
+            f"ResilientFlow AI — Généré le {self.generated_at} — Page {doc.page}"
+        )
+        canvas.restoreState()
+
+
+# ── STYLES ──────────────────────────────────────────────────────────────────────
+def _S():
+    s = {}
+    def ps(name, **kw):
+        s[name] = ParagraphStyle(name, **kw)
+    ps("h1",      fontName="Helvetica-Bold", fontSize=17, textColor=white, alignment=TA_CENTER, spaceAfter=2)
+    ps("h1sub",   fontName="Helvetica",      fontSize=10, textColor=HexColor("#93c5fd"), alignment=TA_CENTER)
+    ps("ref",     fontName="Helvetica-Bold", fontSize=9,  textColor=AMBRE, alignment=TA_CENTER)
+    ps("sec",     fontName="Helvetica-Bold", fontSize=10, textColor=white, spaceBefore=3, spaceAfter=2)
+    ps("body",    fontName="Helvetica",      fontSize=9,  textColor=GRIS_F, leading=13)
+    ps("small",   fontName="Helvetica",      fontSize=8,  textColor=GRIS_M, leading=11)
+    ps("kpi_val", fontName="Helvetica-Bold", fontSize=15, textColor=BLEU_MED, alignment=TA_CENTER)
+    ps("kpi_lbl", fontName="Helvetica",      fontSize=8,  textColor=GRIS_M, alignment=TA_CENTER)
+    ps("cell",    fontName="Helvetica",      fontSize=7.5,textColor=GRIS_F, leading=9)
+    return s
+
+
+def _sec_header(text, s):
+    tbl = Table([[Paragraph(text, s["sec"])]], colWidths=[W - 4 * cm])
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), BLEU),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+    ]))
+    return tbl
+
+
+# ── EN-TÊTE / COUVERTURE ────────────────────────────────────────────────────────
+def _cover(story, s, ctx):
+    tbl = Table([[
+        Paragraph(f"RAPPORT HEBDOMADAIRE — SEMAINE {ctx['semaine']}", s["h1"]),
+        Paragraph("Agent Sophie · Manager Maintenance", s["h1sub"]),
+        Paragraph(f"Réf. {ctx['reference']}", s["ref"]),
+    ]], colWidths=[W - 4 * cm])
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), BLEU),
+        ("TOPPADDING", (0, 0), (-1, -1), 16),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 16),
+        ("LEFTPADDING", (0, 0), (-1, -1), 20),
+    ]))
+    story.append(tbl)
+    story.append(Spacer(1, 0.4 * cm))
+
+    statut = ctx.get("statut", "—")
+    data = [
+        ["Machines couvertes", ctx.get("machine", "—"), "Date rapport", ctx["date_str"]],
+        ["RUL P-17 (temps réel)", f"{ctx.get('rul', '—')}j", "Statut P-17", statut],
+    ]
+    t = Table(data, colWidths=[4.2 * cm, 5.8 * cm, 4.2 * cm, 5.8 * cm])
+    t.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("TEXTCOLOR", (0, 0), (0, -1), BLEU),
+        ("TEXTCOLOR", (2, 0), (2, -1), BLEU),
+        ("BACKGROUND", (0, 0), (-1, -1), GRIS_TC),
+        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [white, GRIS_TC]),
+        ("GRID", (0, 0), (-1, -1), 0.5, HexColor("#e5e7eb")),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 0.4 * cm))
+
+
+# ── KPIs ─────────────────────────────────────────────────────────────────────
+def _kpis(story, s, ctx):
+    story.append(_sec_header("1. INDICATEURS DE LA SEMAINE", s))
+    story.append(Spacer(1, 0.2 * cm))
+
+    def _plural(n, singulier, pluriel):
+        return singulier if n == 1 else pluriel
+
+    kpis = [
+        (f"{ctx['taux_realisation']}%", "Taux réalisation", BLEU_CLAIR),
+        (str(ctx["arrets_evites"]), _plural(ctx["arrets_evites"], "Arrêt évité", "Arrêts évités"), VERT_CLAIR),
+        (str(ctx["n_ruptures"]), _plural(ctx["n_ruptures"], "Rupture stock", "Ruptures stock"), ROUGE_CLAIR if ctx["n_ruptures"] else GRIS_C),
+        (f"{ctx['n_dispos']}/{ctx['n_equipe']}", "Techniciens dispos", GRIS_C),
+    ]
+    cells_val = [[Paragraph(v, s["kpi_val"]) for v, _, _ in kpis]]
+    cells_lbl = [[Paragraph(l, s["kpi_lbl"]) for _, l, _ in kpis]]
+    col_w = (W - 4 * cm) / len(kpis)
+
+    tv = Table(cells_val, colWidths=[col_w] * len(kpis))
+    tl = Table(cells_lbl, colWidths=[col_w] * len(kpis))
+    bg_style = [
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]
+    for i, (_, _, c) in enumerate(kpis):
+        bg_style.append(("BACKGROUND", (i, 0), (i, 0), c))
+    tv.setStyle(TableStyle(bg_style))
+    tl.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")]))
+
+    story.append(tv)
+    story.append(tl)
+    story.append(Spacer(1, 0.3 * cm))
+
+
+# ── INTERVENTIONS DE LA SEMAINE ─────────────────────────────────────────────────
+def _interventions(story, s, ctx):
+    story.append(_sec_header("2. INTERVENTIONS DE LA SEMAINE", s))
+    story.append(Spacer(1, 0.2 * cm))
+
+    hist = ctx.get("historique") or []
+    if not hist:
+        story.append(Paragraph("Aucune intervention enregistrée cette semaine.", s["body"]))
+        story.append(Spacer(1, 0.3 * cm))
+        return
+
+    hdr = [["Machine", "Intervention", "Type", "Statut", "Date", "Technicien", "Durée", "Coût"]]
+    rows = []
+    for i in hist:
+        cout  = i.get("cout_estime")
+        duree = i.get("duree_estimee")
+        rows.append([
+            i.get("machine") or "—",
+            Paragraph(i.get("titre") or "—", s["cell"]),
+            Paragraph(i.get("type") or "—", s["cell"]),
+            i.get("statut") or "—",
+            i.get("date") or "—",
+            Paragraph(i.get("technicien") or "—", s["cell"]),
+            f"{duree}h" if isinstance(duree, (int, float)) else "—",
+            f"{cout:,.0f} €" if isinstance(cout, (int, float)) else "—",
+        ])
+    t = Table(hdr + rows, colWidths=[1.8 * cm, 3.3 * cm, 2.1 * cm, 2.0 * cm, 2.0 * cm, 2.5 * cm, 1.6 * cm, 1.7 * cm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), BLEU_MED),
+        ("TEXTCOLOR", (0, 0), (-1, 0), white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 0.4, HexColor("#e5e7eb")),
+        ("ALIGN", (1, 1), (-1, -1), "CENTER"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [white, GRIS_TC]),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 0.3 * cm))
+
+
+# ── ÉTAT DU STOCK ────────────────────────────────────────────────────────────────
+def _stock(story, s, ctx):
+    story.append(_sec_header("3. ÉTAT DU STOCK PIÈCES", s))
+    story.append(Spacer(1, 0.2 * cm))
+
+    pieces = ctx.get("pieces_stock") or []
+    if not pieces:
+        story.append(Paragraph("Aucune donnée de stock disponible.", s["body"]))
+        story.append(Spacer(1, 0.3 * cm))
+        return
+
+    def _num(v):
+        return str(v) if isinstance(v, (int, float)) else "—"
+
+    hdr = [["Machine", "Pièce", "Statut", "Stock actuel", "Stock minimum"]]
+    rows = [[
+        p.get("machine") or "—",
+        Paragraph(p.get("designation") or "—", s["cell"]),
+        p.get("statut_stock") or "—",
+        _num(p.get("stock_actuel")),
+        _num(p.get("stock_minimum")),
+    ] for p in pieces]
+    t = Table(hdr + rows, colWidths=[2.5 * cm, 5.5 * cm, 4 * cm, 3 * cm, 3 * cm])
+
+    style = [
+        ("BACKGROUND", (0, 0), (-1, 0), BLEU_MED),
+        ("TEXTCOLOR", (0, 0), (-1, 0), white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+        ("GRID", (0, 0), (-1, -1), 0.4, HexColor("#e5e7eb")),
+        ("ALIGN", (1, 1), (-1, -1), "CENTER"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [white, GRIS_TC]),
+    ]
+    for idx, p in enumerate(pieces, start=1):
+        if p.get("statut_stock") == "Rupture":
+            style.append(("BACKGROUND", (2, idx), (2, idx), ROUGE_CLAIR))
+        elif p.get("statut_stock") == "Stock faible":
+            style.append(("BACKGROUND", (2, idx), (2, idx), HexColor("#fef3c7")))
+    t.setStyle(TableStyle(style))
+    story.append(t)
+    story.append(Spacer(1, 0.3 * cm))
+
+
+# ── ARBITRAGES DE LA SEMAINE ───────────────────────────────────────────────────
+def _arbitrages(story, s, ctx):
+    story.append(_sec_header("4. ARBITRAGES DE LA SEMAINE", s))
+    story.append(Spacer(1, 0.2 * cm))
+
+    decisions = ctx.get("decisions") or []
+    if not decisions:
+        story.append(Paragraph(
+            "Aucun arbitrage enregistré cette semaine via le simulateur d'impact (S1).",
+            s["body"],
+        ))
+        story.append(Spacer(1, 0.3 * cm))
+        return
+
+    n_maintenues = sum(1 for d in decisions if d.get("decision") == "Intervention maintenue")
+    n_reportees  = sum(1 for d in decisions if d.get("decision") == "Reportée")
+    resume = (
+        f"{len(decisions)} décision(s) enregistrée(s) — "
+        f"{n_maintenues} intervention(s) maintenue(s), {n_reportees} reportée(s)."
     )
- 
- 
-# ── TEST STANDALONE ───────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    print(run_agent_sophie(c_rul=18, equipement="Pompe P-17", c_temp=78.0, c_vib=5.8))
+    story.append(Paragraph(resume, s["body"]))
+    story.append(Spacer(1, 0.15 * cm))
+
+    def _pct(v):
+        return f"{v}%" if isinstance(v, (int, float)) else "—"
+
+    def _eur(v):
+        return f"{v:,.0f} €" if isinstance(v, (int, float)) else "—"
+
+    hdr = [["Équipement", "Scénario simulé", "Décision", "Risque", "Impact"]]
+    rows = [[
+        d.get("equipement") or "—",
+        Paragraph(d.get("scenario") or "—", s["cell"]),
+        d.get("decision") or "—",
+        _pct(d.get("risque")),
+        _eur(d.get("impact")),
+    ] for d in decisions]
+    t = Table(hdr + rows, colWidths=[2.5 * cm, 6 * cm, 3.5 * cm, 2.5 * cm, 2.5 * cm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), BLEU_MED),
+        ("TEXTCOLOR", (0, 0), (-1, 0), white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+        ("GRID", (0, 0), (-1, -1), 0.4, HexColor("#e5e7eb")),
+        ("ALIGN", (2, 1), (-1, -1), "CENTER"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [white, GRIS_TC]),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 0.3 * cm))
+
+
+# ── ENTRY POINT ──────────────────────────────────────────────────────────────────
+def generate_sophie_pdf(data: dict) -> bytes:
+    """
+    Génère le rapport hebdomadaire PDF de l'Agent Sophie.
+
+    Args:
+        data (dict): voir docstring du module — construit directement depuis
+                     les variables déjà calculées dans TAB 3 de pages/2_Sophie.py.
+
+    Returns:
+        bytes: contenu PDF prêt pour st.download_button()
+    """
+    now = datetime.now()
+    today = date.today()
+    semaine = data.get("semaine", today.isocalendar()[1])
+
+    ref = f"RAPPORT_SOPHIE_S{semaine}_{today.strftime('%Y%m%d')}_{now.strftime('%H%M')}"
+
+    ctx = {
+        "reference": ref,
+        "date_str": today.strftime("%d/%m/%Y"),
+        "generated_at": now.strftime("%d/%m/%Y à %H:%M"),
+        "semaine": semaine,
+        "machine": data.get("machine", "Pompe P-17"),
+        "rul": data.get("rul", "—"),
+        "statut": data.get("statut", "—"),
+        "taux_realisation": data.get("taux_realisation", 0),
+        "arrets_evites": data.get("arrets_evites", 0),
+        "n_ruptures": data.get("n_ruptures", 0),
+        "n_dispos": data.get("n_dispos", 0),
+        "n_equipe": data.get("n_equipe", 0),
+        "historique": data.get("historique", []),
+        "pieces_stock": data.get("pieces_stock", []),
+        "decisions": data.get("decisions", []),
+    }
+
+    s = _S()
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=2 * cm, rightMargin=2 * cm,
+        topMargin=1.8 * cm, bottomMargin=1.4 * cm,
+        title=f"Rapport Hebdomadaire Sophie — Semaine {semaine}",
+        author="ResilientFlow AI",
+    )
+
+    pt = _PT(ref, ctx["generated_at"])
+    story = []
+
+    _cover(story, s, ctx)
+    _kpis(story, s, ctx)
+    _interventions(story, s, ctx)
+    _stock(story, s, ctx)
+    _arbitrages(story, s, ctx)
+
+    doc.build(story, onFirstPage=pt, onLaterPages=pt)
+    return buf.getvalue()
