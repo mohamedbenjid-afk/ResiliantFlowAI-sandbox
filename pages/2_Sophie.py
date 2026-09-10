@@ -308,6 +308,7 @@ with tab1:
                 "commentaire":   f"RUL projeté {rul_projete}j · Coût intervention {cout_intervention:,}€ · {recommandation}",
             })
             st.success(f"✅ Décision enregistrée — {decision_label}")
+            st.session_state["sophie_decision_verrouillee"] = True
         except Exception as e:
             detail = None
             resp = getattr(e, "response", None)
@@ -326,14 +327,26 @@ with tab1:
                 else:
                     st.code(repr(e))
 
+    # Une seule décision par simulation : dès qu'un choix est validé, les deux
+    # boutons se verrouillent. Bouger le curseur (= nouvelle situation à
+    # arbitrer) déverrouille automatiquement pour permettre une nouvelle décision.
+    if st.session_state.get("sophie_dernier_jours_report") != jours_report:
+        st.session_state["sophie_dernier_jours_report"] = jours_report
+        st.session_state["sophie_decision_verrouillee"] = False
+
+    decision_verrouillee = st.session_state.get("sophie_decision_verrouillee", False)
+    if decision_verrouillee:
+        st.info("🔒 Décision déjà enregistrée pour cette simulation. Bouge le curseur pour arbitrer une nouvelle situation.")
+
     col_dec1, col_dec2 = st.columns(2)
     with col_dec1:
-        if st.button("✅ Valider l'intervention immédiate", use_container_width=True, type="primary"):
+        if st.button("✅ Valider l'intervention immédiate", use_container_width=True,
+                      type="primary", disabled=decision_verrouillee):
             _enregistrer_decision("Intervention maintenue", "Intervention immédiate")
     with col_dec2:
-        report_disabled = jours_report == 0
+        report_disabled = (jours_report == 0) or decision_verrouillee
         label_report = (
-            f"⏳ Valider un report de {jours_report}h" if not report_disabled
+            f"⏳ Valider un report de {jours_report}h" if jours_report > 0
             else "⏳ Valider un report (déplace le curseur d'abord)"
         )
         if st.button(label_report, use_container_width=True, disabled=report_disabled):
