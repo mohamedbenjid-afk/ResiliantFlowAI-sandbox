@@ -511,6 +511,32 @@ with tab3:
             {"nom": "Rousseau", "prenom": "Fatima", "disponibilite": "Disponible",     "heures_restantes": 6},
         ]
 
+    # ── Arbitrages de la semaine (décisions enregistrées via S1) ────────────────
+    # Pas de fonction de lecture dédiée côté notion_client.py : on réutilise
+    # directement les helpers génériques déjà exposés (_query_db / _prop),
+    # sans rien modifier au fichier de Mohamed.
+    def _get_decisions_semaine():
+        try:
+            results = nc._query_db(
+                nc.DB_IDS["decisions_sophie"],
+                filter_payload={"property": "Date / Heure", "date": {"past_week": {}}},
+                sorts=[{"property": "Date / Heure", "direction": "descending"}],
+            )
+            decisions = []
+            for p in results:
+                decisions.append({
+                    "equipement": nc._prop(p, "Équipement"),
+                    "scenario":   nc._prop(p, "Scénario simulé"),
+                    "decision":   nc._prop(p, "Décision prise"),
+                    "risque":     nc._prop(p, "Risque estimé (%)"),
+                    "impact":     nc._prop(p, "Impact estimé (€)"),
+                })
+            return decisions
+        except Exception:
+            return []
+
+    decisions_semaine = _get_decisions_semaine()
+
     # ── KPIs ──────────────────────────────────────────────────────────────────
     n_realisees   = sum(1 for i in historique if i.get("statut") == "Réalisée")
     n_total       = len(historique)
@@ -629,6 +655,7 @@ with tab3:
                     "historique":       historique,
                     "pieces_stock":     pieces_stock,
                     "equipe_dispo":     equipe_dispo,
+                    "decisions":        decisions_semaine,
                 }
                 pdf_bytes = generate_sophie_pdf(pdf_data)
                 ref = f"Rapport_Sophie_S{semaine}_{datetime.date.today().strftime('%Y%m%d')}"
