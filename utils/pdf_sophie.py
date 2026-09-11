@@ -197,7 +197,7 @@ def _interventions(story, s, ctx):
         cout  = i.get("cout_estime")
         duree = i.get("duree_estimee")
         rows.append([
-            i.get("machine") or "—",
+            Paragraph(i.get("machine") or "—", s["cell"]),
             Paragraph(i.get("titre") or "—", s["cell"]),
             Paragraph(i.get("type") or "—", s["cell"]),
             i.get("statut") or "—",
@@ -206,7 +206,7 @@ def _interventions(story, s, ctx):
             f"{duree}h" if isinstance(duree, (int, float)) else "—",
             f"{cout:,.0f} €" if isinstance(cout, (int, float)) else "—",
         ])
-    t = Table(hdr + rows, colWidths=[1.8 * cm, 3.3 * cm, 2.1 * cm, 2.0 * cm, 2.0 * cm, 2.5 * cm, 1.6 * cm, 1.7 * cm])
+    t = Table(hdr + rows, colWidths=[2.3 * cm, 2.9 * cm, 2.0 * cm, 1.9 * cm, 1.9 * cm, 2.4 * cm, 1.6 * cm, 1.7 * cm])
     t.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), BLEU_MED),
         ("TEXTCOLOR", (0, 0), (-1, 0), white),
@@ -239,13 +239,13 @@ def _stock(story, s, ctx):
 
     hdr = [["Machine", "Pièce", "Statut", "Stock actuel", "Stock minimum"]]
     rows = [[
-        p.get("machine") or "—",
+        Paragraph(p.get("machine") or "—", s["cell"]),
         Paragraph(p.get("designation") or "—", s["cell"]),
         p.get("statut_stock") or "—",
         _num(p.get("stock_actuel")),
         _num(p.get("stock_minimum")),
     ] for p in pieces]
-    t = Table(hdr + rows, colWidths=[2.5 * cm, 5.5 * cm, 4 * cm, 3 * cm, 3 * cm])
+    t = Table(hdr + rows, colWidths=[3.5 * cm, 4.5 * cm, 4 * cm, 3 * cm, 3 * cm])
 
     style = [
         ("BACKGROUND", (0, 0), (-1, 0), BLEU_MED),
@@ -297,22 +297,38 @@ def _arbitrages(story, s, ctx):
     def _eur(v):
         return f"{v:,.0f} €" if isinstance(v, (int, float)) else "—"
 
-    hdr = [["Équipement", "Scénario simulé", "Décision", "Risque", "Impact"]]
+    def _fmt_date(v):
+        if not v:
+            return "—"
+        try:
+            return datetime.fromisoformat(v).strftime("%d/%m %H:%M")
+        except Exception:
+            return str(v)[:16]
+
+    import re
+    def _sans_emoji(texte):
+        if not texte:
+            return texte
+        return re.sub(r"[^\x00-\x7FÀ-ÿ€—–·\s]", "", texte).strip()
+
+    hdr = [["Date", "Équipement", "Décision", "Risque", "Impact", "Résultat", "Raison"]]
     rows = [[
+        _fmt_date(d.get("date_heure")),
         d.get("equipement") or "—",
-        Paragraph(d.get("scenario") or "—", s["cell"]),
-        d.get("decision") or "—",
+        Paragraph(d.get("decision") or "—", s["cell"]),
         _pct(d.get("risque")),
         _eur(d.get("impact")),
+        d.get("resultat_reel") or "—",
+        Paragraph(_sans_emoji(d.get("raison")) or "—", s["cell"]),
     ] for d in decisions]
-    t = Table(hdr + rows, colWidths=[2.5 * cm, 6 * cm, 3.5 * cm, 2.5 * cm, 2.5 * cm])
+    t = Table(hdr + rows, colWidths=[2.0 * cm, 2.0 * cm, 2.0 * cm, 1.3 * cm, 1.7 * cm, 2.0 * cm, 6.0 * cm])
     t.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), BLEU_MED),
         ("TEXTCOLOR", (0, 0), (-1, 0), white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
         ("GRID", (0, 0), (-1, -1), 0.4, HexColor("#e5e7eb")),
-        ("ALIGN", (2, 1), (-1, -1), "CENTER"),
+        ("ALIGN", (2, 1), (5, -1), "CENTER"),
         ("TOPPADDING", (0, 0), (-1, -1), 4),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [white, GRIS_TC]),
