@@ -305,7 +305,7 @@ with tab1:
                 "impact_eur":    impact,
                 "decision":      decision_label,
                 "resultat_reel": "En attente",
-                "commentaire":   f"RUL projeté {rul_projete}j · Coût intervention {cout_intervention:,}€ · {recommandation}",
+                "commentaire":   f"Scénario {scenario_label} · Risque {risque}% · RUL projeté {rul_projete}j · Coût intervention {cout_intervention:,}€ · {recommandation}",
             })
             st.success(f"✅ Décision enregistrée — {decision_label}")
             st.session_state["sophie_decision_verrouillee"] = True
@@ -558,11 +558,13 @@ with tab3:
             decisions = []
             for p in results:
                 decisions.append({
-                    "equipement": nc._prop(p, "Équipement"),
-                    "scenario":   nc._prop(p, "Scénario simulé"),
-                    "decision":   nc._prop(p, "Décision prise"),
-                    "risque":     nc._prop(p, "Risque estimé (%)"),
-                    "impact":     nc._prop(p, "Impact estimé (€)"),
+                    "equipement":    nc._prop(p, "Équipement"),
+                    "date_heure":    nc._prop(p, "Date / Heure"),
+                    "decision":      nc._prop(p, "Décision prise"),
+                    "risque":        nc._prop(p, "Risque estimé (%)"),
+                    "impact":        nc._prop(p, "Impact estimé (€)"),
+                    "resultat_reel": nc._prop(p, "Résultat réel"),
+                    "raison":        nc._prop(p, "Commentaire"),
                 })
             return decisions
         except Exception:
