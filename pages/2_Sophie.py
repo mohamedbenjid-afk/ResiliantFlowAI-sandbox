@@ -309,6 +309,7 @@ with tab1:
             })
             st.success(f"✅ Décision enregistrée — {decision_label}")
             st.session_state["sophie_decision_verrouillee"] = True
+            st.session_state["sophie_decision_choisie"] = decision_label
         except Exception as e:
             detail = None
             resp = getattr(e, "response", None)
@@ -333,10 +334,12 @@ with tab1:
     if st.session_state.get("sophie_dernier_jours_report") != jours_report:
         st.session_state["sophie_dernier_jours_report"] = jours_report
         st.session_state["sophie_decision_verrouillee"] = False
+        st.session_state["sophie_decision_choisie"] = None
 
     decision_verrouillee = st.session_state.get("sophie_decision_verrouillee", False)
     if decision_verrouillee:
-        st.info("🔒 Décision déjà enregistrée pour cette simulation. Bouge le curseur pour arbitrer une nouvelle situation.")
+        choix = st.session_state.get("sophie_decision_choisie", "—")
+        st.info(f"🔒 Décision enregistrée pour cette simulation : **{choix}**. Bouge le curseur pour arbitrer une nouvelle situation.")
 
     col_dec1, col_dec2 = st.columns(2)
     with col_dec1:
