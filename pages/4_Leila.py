@@ -94,6 +94,23 @@ with tab0:
     st.markdown("🔒 **Procédure LOTO systématique :** Sectionneur d'alimentation cadenassé en cellule BT.")
 
     st.markdown("---")
+    st.markdown("##### ✅ Checklist de sécurisation avant intervention")
+    st.caption("À valider par Leila (ou le technicien habilité) avant toute action physique sur la pompe.")
+    col_chk1, col_chk2 = st.columns(2)
+    with col_chk1:
+        chk_epi           = st.checkbox("EPI confirmé", key="l0_chk_epi")
+        chk_consignation  = st.checkbox("Consignation électrique", key="l0_chk_consignation")
+        chk_pression      = st.checkbox("Pression contrôlée", key="l0_chk_pression")
+    with col_chk2:
+        chk_habilitation  = st.checkbox("Habilitation confirmée", key="l0_chk_habilitation")
+        chk_autorisation  = st.checkbox("Autorisation d'intervention", key="l0_chk_autorisation")
+
+    if all([chk_epi, chk_consignation, chk_pression, chk_habilitation, chk_autorisation]):
+        st.success("✅ **INTERVENTION AUTORISÉE**")
+    else:
+        st.warning("⏳ En attente de confirmation des 5 points de contrôle avant autorisation.")
+
+    st.markdown("---")
 
     # ── Appel agent HSE ───────────────────────────────────────────────────────
     if st.button("🤖 Lancer l'évaluation HSE complète", use_container_width=True, key="btn_agent_l0"):
@@ -198,7 +215,7 @@ with tab2:
         "a reçu les consignes et la liste d'EPI appropriés avant d'ouvrir sa boîte à outils."
     )
 
-    if st.button("📥 Générer le dossier de conformité pour l'organisme de certification",
+    if st.button("📥 Générer rapport audit",
                  use_container_width=True, key="btn_pdf_l2"):
         st.session_state.running = False
         with st.spinner("Génération du dossier ISO 45001 en cours…"):
