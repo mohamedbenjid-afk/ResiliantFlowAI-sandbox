@@ -146,6 +146,17 @@ def _sp(h=6):
     return Spacer(1, h)
 
 
+def _txt(value, default="—") -> str:
+    """Formate une valeur de champ Notion pour une cellule PDF.
+    Les champs multi_select (ex: Habilitations, EPI obligatoires, Persona)
+    remontent en liste depuis notion_client.py — Paragraph() exige une str."""
+    if value is None or value == "":
+        return default
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v) for v in value) if value else default
+    return str(value)
+
+
 # ── PAGE TEMPLATE (header / footer) ──────────────────────────────────────────
 class _PageTemplate:
     def __init__(self, ref, date_str, equipement):
@@ -614,13 +625,13 @@ def _section_habilitations(story, styles, ctx):
     for t_data in techniciens:
         dispo = t_data.get("disponibilite", "—")
         rows.append([
-            Paragraph(f"<b>{t_data.get('nom','—')} {t_data.get('prenom','')}</b>", styles["cell_bold"]),
-            Paragraph(t_data.get("role", "—"), styles["cell"]),
-            Paragraph(t_data.get("specialite", "—"), styles["cell"]),
-            Paragraph(t_data.get("habilitations", "—"), styles["cell"]),
-            Paragraph(t_data.get("certifications", "—"), styles["cell"]),
-            Paragraph(dispo, styles["cell"]),
-            Paragraph(t_data.get("zone", "—"), styles["cell"]),
+            Paragraph(f"<b>{_txt(t_data.get('nom'))} {_txt(t_data.get('prenom'), '')}</b>", styles["cell_bold"]),
+            Paragraph(_txt(t_data.get("role")), styles["cell"]),
+            Paragraph(_txt(t_data.get("specialite")), styles["cell"]),
+            Paragraph(_txt(t_data.get("habilitations")), styles["cell"]),
+            Paragraph(_txt(t_data.get("certifications")), styles["cell"]),
+            Paragraph(_txt(dispo), styles["cell"]),
+            Paragraph(_txt(t_data.get("zone")), styles["cell"]),
             Paragraph("✓ CONFORME" if dispo == "Disponible" else "⚠ À VÉRIFIER", styles["cell_bold"]),
         ])
 
