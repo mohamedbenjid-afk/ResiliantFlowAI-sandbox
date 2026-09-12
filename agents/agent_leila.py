@@ -294,16 +294,14 @@ Tu analyses les situations d'intervention pour garantir la conformité ISO 45001
 Ton rôle : identifier les risques réglementaires, prescrire les EPI obligatoires,
 vérifier la conformité des procédures et générer les preuves d'audit.
 
-RÈGLE IMPÉRATIVE : appelle TOUJOURS get_matrice_risques_capteurs avec les valeurs
-capteurs fournies avant de conclure. Le champ "risque_maximal" qu'il retourne EST
-le niveau de risque global — ne l'invente jamais toi-même et ne le contredis
-jamais avec ta propre estimation des valeurs capteurs. Base la section "Matrice
-des risques identifiés" uniquement sur la liste "risques_identifies" retournée
-par l'outil, pas sur ton jugement personnel des chiffres.
+RÈGLE IMPÉRATIVE : le niveau de risque global et la matrice des risques capteurs
+te sont donnés directement dans le message utilisateur (déjà calculés à partir
+des seuils réels de la machine) — ne les recalcule jamais, ne les invente
+jamais, ne les contredis jamais avec ta propre lecture des chiffres. Ta réponse
+ne couvre QUE les sections 3 à 5 ci-dessous (1 et 2 sont déjà affichées par
+ailleurs, ne les répète pas).
 
-Format de réponse attendu :
-1. **Niveau de risque global** : FAIBLE / MODÉRÉ / ÉLEVÉ avec justification
-2. **Matrice des risques identifiés** : tableau risque / niveau / EPI requis / norme
+Format de réponse attendu (sections 3 à 5 uniquement) :
 3. **Procédure LOTO** : étapes obligatoires si applicable
 4. **Points de non-conformité** : ce qui manque ou doit être corrigé
 5. **Dossier de preuve** : référence du rapport généré et contenu
@@ -312,26 +310,66 @@ Sois précis sur les normes (EN, ISO, NF). Leila répond devant un auditeur exte
 """
 
 
+def _rendre_matrice_markdown(matrice: dict) -> str:
+    """Rend les sections 1-2 (niveau de risque + matrice) en Markdown déterministe,
+    directement depuis le résultat de get_matrice_risques_capteurs — jamais reformulé
+    par le LLM, pour garantir que le verdict de sécurité affiché est toujours exact."""
+    lignes = [
+        f"**1. Niveau de risque global : {matrice['risque_maximal']}**",
+        "",
+        "**2. Matrice des risques identifiés**",
+        "",
+        "| Risque | Niveau | EPI requis | Norme |",
+        "|---|---|---|---|",
+    ]
+    for r in matrice["risques_identifies"]:
+        epi = ", ".join(r.get("epi") or []) if isinstance(r.get("epi"), list) else (r.get("epi") or "—")
+        lignes.append(f"| {r['type']} ({r['valeur']}) | {r['niveau']} | {epi} | {r['norme']} |")
+    return "\n".join(lignes)
+
+
 # ── FONCTION PRINCIPALE ───────────────────────────────────────────────────────
 def run_agent_leila(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> str:
     """
     Lance l'agent Leila avec les valeurs capteurs courantes.
     Retourne l'évaluation HSE complète en texte Markdown.
+
+    FIABILITÉ (constaté en test) : même avec une consigne système explicite, le
+    modèle 1min.ai saute parfois l'appel à get_matrice_risques_capteurs et
+    annonce "FAIBLE" de son propre chef à partir des chiffres bruts — y compris
+    en scénario "Surchauffe critique" confirmé (RUL Critique). Le niveau de
+    risque HSE étant une donnée réglementaire, on ne peut pas la laisser
+    dépendre du bon vouloir du LLM : on la calcule nous-mêmes en Python
+    (déterministe, jamais halluciné) et on l'affiche en tête de réponse,
+    garantie exacte. Le LLM ne rédige plus que les sections annexes (LOTO,
+    non-conformités, dossier de preuve) à partir des autres outils Notion.
     """
+    matrice = get_matrice_risques_capteurs(c_temp, c_vib, c_pres)
+    entete = _rendre_matrice_markdown(matrice)
+
     situation = (
         f"ÉVALUATION HSE — Pompe P-17, Unité B\n"
         f"- Température : {c_temp:.1f}°C\n"
         f"- Vibration   : {c_vib:.2f} mm/s\n"
         f"- Pression    : {c_pres:.1f} bar\n"
         f"- RUL estimé  : {c_rul}h\n\n"
-        f"Réalise l'évaluation HSE complète : matrice de risques, EPI requis, "
-        f"conformité LOTO, traçabilité pièces et génère le dossier d'audit ISO 45001."
+        f"Matrice des risques déjà calculée à partir des capteurs (autorité, ne "
+        f"pas recalculer ni contredire) :\n{json.dumps(matrice, ensure_ascii=False)}\n\n"
+        f"Rédige UNIQUEMENT les sections 3 à 5 : procédure LOTO, points de "
+        f"non-conformité et dossier de preuve. Utilise les outils disponibles "
+        f"pour les exigences HSE/habilitations et la conformité des pièces, "
+        f"puis génère le dossier d'audit."
     )
+
+    # get_matrice_risques_capteurs est déjà calculé ci-dessus : on ne le
+    # propose plus au LLM, pour éviter un second calcul incohérent avec
+    # l'entête déterministe déjà affichée.
+    outils_restants = [t for t in TOOLS if t["name"] != "get_matrice_risques_capteurs"]
 
     messages = [{"role": "user", "content": situation}]
     max_iterations = 6
     for _ in range(max_iterations):
-        resp = _llm_chat(system=SYSTEM, messages=messages, tools=TOOLS, max_tokens=2000)
+        resp = _llm_chat(system=SYSTEM, messages=messages, tools=outils_restants, max_tokens=2000)
 
         if resp.stop_reason == "tool_use":
             appels = [{"name": tc["name"], "arguments": tc["input"], "id": tc.get("id", "tc0")}
@@ -340,7 +378,7 @@ def run_agent_leila(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> s
             appels = [{"name": tc["name"], "arguments": tc.get("arguments", {}), "id": f"tc_noye_{i}"}
                       for i, tc in enumerate(_extraire_tool_calls_noyes(resp.final_text()))]
             if not appels:
-                return resp.final_text()   # vraie réponse finale, aucun outil noyé dedans
+                return f"{entete}\n\n{resp.final_text()}"   # vraie réponse finale, aucun outil noyé dedans
         else:
             break
 
@@ -362,7 +400,7 @@ def run_agent_leila(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> s
         ),
     })
     resp = _llm_chat(system=SYSTEM, messages=messages, tools=None, max_tokens=2000)
-    return resp.final_text()
+    return f"{entete}\n\n{resp.final_text()}"
 
 
 # ── TEST STANDALONE ───────────────────────────────────────────────────────────
