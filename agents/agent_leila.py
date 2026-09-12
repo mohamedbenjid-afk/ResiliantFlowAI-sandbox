@@ -8,7 +8,7 @@ Intégration dans pages/4_Leila.py :
     audit = run_agent_leila(c_temp, c_vib, c_pres, c_rul)
 """
 
-import os, json
+import os, json, re
 from datetime import date
 
 import sys, os as _os
@@ -251,6 +251,33 @@ def _execute(name, inputs):
     return {"erreur": f"Outil inconnu : {name}"}
 
 
+# ── FILET DE SÉCURITÉ 1min.ai ─────────────────────────────────────────────────
+# llm_client._call_1minai ne détecte un tool_call que si la réponse COMMENCE
+# par "{". Le modèle 1min.ai ignore souvent la consigne "réponds UNIQUEMENT
+# avec ce JSON" et noie un ou plusieurs appels d'outil dans du texte narratif
+# ("Je vais d'abord générer la matrice...\n{"tool_call": ...}"). Dans ce cas
+# llm_client renvoie stop_reason="end_turn" avec le JSON brut tel quel, et
+# sans ce filet les outils (donc Notion) ne sont jamais exécutés — d'où le
+# JSON affiché tel quel dans Streamlit. On retrouve ici chaque bloc
+# {"tool_call": {...}} avec un décodeur JSON incrémental (gère les accolades
+# imbriquées) pour les exécuter nous-mêmes.
+_TOOL_CALL_RE = re.compile(r'\{\s*"tool_call"')
+
+
+def _extraire_tool_calls_noyes(texte: str) -> list[dict]:
+    decoder = json.JSONDecoder()
+    appels = []
+    for m in _TOOL_CALL_RE.finditer(texte or ""):
+        try:
+            obj, _ = decoder.raw_decode(texte, m.start())
+        except json.JSONDecodeError:
+            continue
+        tc = obj.get("tool_call", {})
+        if tc.get("name"):
+            appels.append(tc)
+    return appels
+
+
 # ── PROMPT SYSTÈME ────────────────────────────────────────────────────────────
 SYSTEM = """Tu es l'assistant HSE de Leila, Responsable Santé-Sécurité-Environnement.
 Tu analyses les situations d'intervention pour garantir la conformité ISO 45001.
@@ -286,18 +313,40 @@ def run_agent_leila(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> s
     )
 
     messages = [{"role": "user", "content": situation}]
-    while True:
+    max_iterations = 6
+    for _ in range(max_iterations):
         resp = _llm_chat(system=SYSTEM, messages=messages, tools=TOOLS, max_tokens=2000)
-        if resp.stop_reason == "end_turn":
-            return resp.final_text()
+
         if resp.stop_reason == "tool_use":
-            results = []
-            for tc in resp.tool_calls():
-                out = _execute(tc["name"], tc["input"])
-                results.append({"type": "tool_result", "tool_use_id": tc.get("id", "tc0"),
-                                "content": json.dumps(out, ensure_ascii=False)})
-            messages.append({"role": "assistant", "content": resp.content})
-            messages.append({"role": "user",      "content": results})
+            appels = [{"name": tc["name"], "arguments": tc["input"], "id": tc.get("id", "tc0")}
+                      for tc in resp.tool_calls()]
+        elif resp.stop_reason == "end_turn":
+            appels = [{"name": tc["name"], "arguments": tc.get("arguments", {}), "id": f"tc_noye_{i}"}
+                      for i, tc in enumerate(_extraire_tool_calls_noyes(resp.final_text()))]
+            if not appels:
+                return resp.final_text()   # vraie réponse finale, aucun outil noyé dedans
+        else:
+            break
+
+        results = [{
+            "type": "tool_result", "tool_use_id": appel["id"],
+            "content": json.dumps(_execute(appel["name"], appel["arguments"]), ensure_ascii=False),
+        } for appel in appels]
+        messages.append({"role": "assistant", "content": resp.content})
+        messages.append({"role": "user",      "content": results})
+
+    # Garde-fou : au-delà de max_iterations, on force une synthèse finale sans
+    # outils plutôt que de laisser l'app tourner indéfiniment.
+    messages.append({
+        "role": "user",
+        "content": (
+            "Tu as maintenant toutes les données nécessaires. Rédige directement "
+            "la synthèse finale au format demandé, en texte, sans appeler d'autre "
+            "outil et sans réutiliser la syntaxe JSON tool_call."
+        ),
+    })
+    resp = _llm_chat(system=SYSTEM, messages=messages, tools=None, max_tokens=2000)
+    return resp.final_text()
 
 
 # ── TEST STANDALONE ───────────────────────────────────────────────────────────
