@@ -10,69 +10,19 @@ Intégration dans pages/4_Leila.py :
 
 import os, json
 from datetime import date
-import requests as _requests
 
 import sys, os as _os
 sys.path.append(_os.path.join(_os.path.dirname(__file__), '..'))
 from llm_client import chat as _llm_chat
 
-
-def _get_secret(key):
-    try:
-        import streamlit as st
-        return st.secrets[key]
-    except Exception:
-        return os.environ.get(key, "")
-
-
-# ── CLIENT NOTION via requests ────────────────────────────────────────────────
-def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None) -> list:
-    token = _get_secret("NOTION_TOKEN")
-    url   = f"https://api.notion.com/v1/databases/{database_id}/query"
-    headers = {
-        "Authorization":  f"Bearer {token}",
-        "Notion-Version": "2022-06-28",
-        "Content-Type":   "application/json",
-    }
-    payload = {}
-    if filter_obj: payload["filter"] = filter_obj
-    if sorts:      payload["sorts"]  = sorts
-
-    results, has_more, cursor = [], True, None
-    while has_more:
-        if cursor:
-            payload["start_cursor"] = cursor
-        resp = _requests.post(url, headers=headers, json=payload, timeout=15)
-        if not resp.ok:
-            return []
-        data = resp.json()
-        results.extend(data.get("results", []))
-        has_more = data.get("has_more", False)
-        cursor   = data.get("next_cursor")
-    return results
-
-
-# ── IDs des bases Notion ResilientFlow ───────────────────────────────────────
-DB_HISTORIQUE = "94babab5-03bb-4c4d-9053-08d5bff301e3"   # Historique & plan de maintenance
-DB_PIECES     = "ef896795-bd1a-4b20-a8ea-f121c9f846ff"   # Pièces détachées
-DB_HSE        = "3856b2ff-be3d-816f-a163-ef4f8e43499d"   # Documentation & HSE
-DB_EQUIPE     = "3856b2ff-be3d-8151-8b3f-ee79dee0bc2b"   # Équipe maintenance (habilitations)
-
-
-# ── HELPERS ───────────────────────────────────────────────────────────────────
-def _text(prop):
-    if not prop: return ""
-    t = prop.get("type")
-    if t == "title":        return "".join(r["plain_text"] for r in prop.get("title", []))
-    if t == "rich_text":    return "".join(r["plain_text"] for r in prop.get("rich_text", []))
-    if t == "select":       s = prop.get("select"); return s["name"] if s else ""
-    if t == "multi_select": return [o["name"] for o in prop.get("multi_select", [])]
-    if t == "number":       v = prop.get("number"); return v if v is not None else ""
-    if t == "date":         d = prop.get("date"); return d["start"] if d else ""
-    if t == "url":          return prop.get("url") or ""
-    return ""
-
-def _p(page): return page.get("properties", {})
+# ── CLIENT NOTION PARTAGÉ ─────────────────────────────────────────────────────
+# CORRECTION : cet agent réimplémentait son propre mini-client Notion avec des
+# IDs de base codés en dur (DB_HISTORIQUE/DB_PIECES/DB_HSE/DB_EQUIPE) qui ne
+# correspondaient plus aux bases [SANDBOX] réelles utilisées par
+# `notion_client.py` et par `pages/4_Leila.py` — d'où des données HSE
+# manquantes ou incohérentes. On utilise désormais le client Notion partagé,
+# comme `agents/agent_lionel.py`.
+import notion_client as nc
 
 
 # ── RÉFÉRENTIEL HSE INTERNE (données réglementaires statiques) ────────────────
@@ -102,59 +52,40 @@ NORMES_LOTO = {
 
 def get_exigences_hse_intervention(equipement: str) -> dict:
     """Documents HSE, exigences EPI et procédures LOTO pour cet équipement."""
-    # Documents HSE associés à la machine
-    docs_res = _notion_query(
-        DB_HSE,
-        filter_obj={"property": "Machine concernée", "rich_text": {"contains": equipement}}
-    )
-    docs_hse = []
-    for page in docs_res:
-        p = _p(page)
-        docs_hse.append({
-            "titre":           _text(p.get("Titre document")),
-            "type":            _text(p.get("Type")),
-            "statut":          _text(p.get("Statut")),
-            "niveau_risque":   _text(p.get("Niveau risque")),
-            "epi_obligatoires":_text(p.get("EPI obligatoires")),   # list
-            "persona":         _text(p.get("Persona destinataire")), # list
-            "resume":          _text(p.get("Contenu résumé")),
-            "lien":            _text(p.get("Lien document")),
-            "date_validation": _text(p.get("Date validation")),
-            "date_revision":   _text(p.get("Date révision")),
-        })
+    docs_hse = [{
+        "titre":            d.get("titre"),
+        "type":             d.get("type"),
+        "statut":           d.get("statut"),
+        "niveau_risque":    d.get("niveau_risque"),
+        "epi_obligatoires": d.get("epi"),        # list
+        "persona":          d.get("persona"),    # list
+        "resume":           d.get("resume"),
+        "lien":             d.get("lien"),
+        "date_validation":  d.get("date_validation"),
+        "date_revision":    d.get("date_revision"),
+    } for d in nc.get_docs_hse(machine_id=equipement)]
 
-    # Habilitations de l'équipe
-    equipe_res = _notion_query(DB_EQUIPE)
     habilitations = [{
-        "technicien":   _text(_p(p).get("Nom Technicien")),
-        "habilitations":_text(_p(p).get("Habilitations")),  # list
-        "disponibilite":_text(_p(p).get("Disponibilité")),
-        "zone":         _text(_p(p).get("Zone assignée")),
-    } for p in equipe_res]
+        "technicien":    f"{e.get('prenom') or ''} {e.get('nom') or ''}".strip(),
+        "habilitations": e.get("habilitations"),   # list
+        "disponibilite": e.get("disponibilite"),
+        "zone":          e.get("zone"),
+    } for e in nc.get_equipe()]
 
-    # Interventions planifiées
-    interv_res = _notion_query(
-        DB_HISTORIQUE,
-        filter_obj={"and": [
-            {"property": "Équipement", "rich_text": {"contains": equipement}},
-            {"property": "Statut",     "select":    {"equals": "Planifiée"}},
-        ]},
-        sorts=[{"property": "Date planifiée", "direction": "ascending"}]
-    )
     interventions = [{
-        "titre":     _text(_p(p).get("Intervention")),
-        "type":      _text(_p(p).get("Type d'intervention")),
-        "date":      _text(_p(p).get("Date planifiée")),
-        "technicien":_text(_p(p).get("Technicien assigné")),
-        "duree_h":   _text(_p(p).get("Durée estimée (h)")),
-    } for p in interv_res]
+        "titre":      i.get("titre"),
+        "type":       i.get("type"),
+        "date":       i.get("date"),
+        "technicien": i.get("technicien"),
+        "duree_h":    i.get("duree_estimee"),
+    } for i in nc.get_historique(machine_id=equipement, statut="Planifiée")]
 
     return {
-        "docs_hse":               docs_hse or [{"info": "Aucun document HSE associé"}],
-        "nb_docs_hse":            len(docs_hse),
-        "habilitations_equipe":   habilitations,
+        "docs_hse":                 docs_hse or [{"info": "Aucun document HSE associé"}],
+        "nb_docs_hse":              len(docs_hse),
+        "habilitations_equipe":     habilitations,
         "interventions_planifiees": interventions or [{"info": "Aucune intervention planifiée"}],
-        "norme_loto":             NORMES_LOTO,
+        "norme_loto":               NORMES_LOTO,
     }
 
 
@@ -224,26 +155,18 @@ def get_matrice_risques_capteurs(c_temp: float, c_vib: float, c_pres: float) -> 
 
 def get_conformite_pieces(equipement: str) -> dict:
     """Vérifie la traçabilité réglementaire des pièces (référence + fournisseur)."""
-    res = _notion_query(
-        DB_PIECES,
-        filter_obj={"property": "Équipements compatibles", "rich_text": {"contains": equipement}}
-    )
     conformes, non_conformes = [], []
-    for page in res:
-        p     = _p(page)
-        ref   = _text(p.get("Réf. fabricant"))
-        fourn = _text(p.get("Fournisseur principal"))
+    for piece in nc.get_pieces(machine_id=equipement):
+        ref   = piece.get("reference")
+        fourn = piece.get("fournisseur")
         entry = {
-            "designation": _text(p.get("Composant")),
-            "reference":   ref,
-            "fournisseur": fourn,
-            "statut_stock":_text(p.get("Statut stock")),
-            "conforme":    bool(ref and fourn),
+            "designation":  piece.get("designation"),
+            "reference":    ref,
+            "fournisseur":  fourn,
+            "statut_stock": piece.get("statut_stock"),
+            "conforme":     bool(ref and fourn),
         }
-        if entry["conforme"]:
-            conformes.append(entry)
-        else:
-            non_conformes.append(entry)
+        (conformes if entry["conforme"] else non_conformes).append(entry)
 
     total = len(conformes) + len(non_conformes)
     return {
