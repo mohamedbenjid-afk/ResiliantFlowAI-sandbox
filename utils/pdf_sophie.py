@@ -95,6 +95,12 @@ def _S():
     return s
 
 
+def _fmt_eur(v):
+    """Format monétaire avec point comme séparateur de milliers (ex: 7.800 €),
+    cohérent avec l'app — la virgule prête à confusion en français."""
+    return f"{v:,.0f}".replace(",", ".")
+
+
 def _sec_header(text, s):
     tbl = Table([[Paragraph(text, s["sec"])]], colWidths=[W - 4 * cm])
     tbl.setStyle(TableStyle([
@@ -204,7 +210,7 @@ def _interventions(story, s, ctx):
             i.get("date") or "—",
             Paragraph(i.get("technicien") or "—", s["cell"]),
             f"{duree}h" if isinstance(duree, (int, float)) else "—",
-            f"{cout:,.0f} €" if isinstance(cout, (int, float)) else "—",
+            f"{_fmt_eur(cout)} €" if isinstance(cout, (int, float)) else "—",
         ])
     t = Table(hdr + rows, colWidths=[2.3 * cm, 2.9 * cm, 2.0 * cm, 1.9 * cm, 1.9 * cm, 2.4 * cm, 1.6 * cm, 1.7 * cm])
     t.setStyle(TableStyle([
@@ -295,7 +301,7 @@ def _arbitrages(story, s, ctx):
         return f"{v}%" if isinstance(v, (int, float)) else "—"
 
     def _eur(v):
-        return f"{v:,.0f} €" if isinstance(v, (int, float)) else "—"
+        return f"{_fmt_eur(v)} €" if isinstance(v, (int, float)) else "—"
 
     def _fmt_date(v):
         if not v:
