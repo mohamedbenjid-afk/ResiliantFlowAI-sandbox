@@ -100,14 +100,21 @@ with tab0:
         st.session_state.running = False
         with st.spinner("L'agent analyse la conformité ISO 45001…"):
             try:
-                from agents.agent_leila import run_agent_leila
+                from agents.agent_leila import run_agent_leila, get_matrice_risques_capteurs
                 result = run_agent_leila(
                     c_temp=float(c_temp),
                     c_vib=float(c_vib),
                     c_pres=float(c_pres),
                     c_rul=int(c_rul),
                 )
-                st.session_state.leila_result = result
+                st.session_state.leila_result  = result
+                # Matrice figée au moment du clic (mêmes valeurs capteurs que
+                # celles utilisées par l'agent) : sert à afficher les EPI
+                # concrets requis dans la checklist et à la réinitialiser
+                # automatiquement dès que le risque évalué change.
+                st.session_state.leila_matrice = get_matrice_risques_capteurs(
+                    float(c_temp), float(c_vib), float(c_pres)
+                )
                 st.success("✅ Évaluation HSE générée.")
             except Exception as e:
                 st.error(f"Erreur agent : {e}")
@@ -120,20 +127,36 @@ with tab0:
         # elle qui détermine QUELS EPI et QUELLE procédure LOTO s'appliquent
         # à la situation capteurs actuelle. La confirmer AVANT de connaître
         # ces exigences n'aurait pas de sens métier.
+        matrice     = st.session_state.get("leila_matrice") or {}
+        niveau      = matrice.get("risque_maximal", "—")
+        risques     = matrice.get("risques_identifies", [])
+        epi_requis  = sorted({epi for r in risques for epi in (r.get("epi") or [])})
+
+        # Signature du contenu de la matrice : sert de suffixe aux clés des
+        # cases à cocher. Si l'évaluation change (nouveau risque, nouveaux
+        # EPI), la signature change, donc Streamlit traite les cases comme de
+        # NOUVEAUX widgets et les réaffiche décochées — plutôt que de garder
+        # une "INTERVENTION AUTORISÉE" cochée pour un risque qui a changé.
+        signature = str(hash((niveau, tuple(sorted(epi_requis)))))[-8:]
+
         st.markdown("---")
         st.markdown("##### ✅ Checklist de sécurisation avant intervention")
-        st.caption("À cocher une fois les exigences ci-dessus (EPI, LOTO) effectivement appliquées sur le terrain.")
+        st.caption(f"Niveau de risque évalué : **{niveau}**. Coche une fois les exigences appliquées sur le terrain "
+                   "— la checklist se réinitialise automatiquement à chaque nouvelle évaluation.")
+        if epi_requis:
+            st.caption("🦺 EPI requis pour cette situation : " + ", ".join(epi_requis))
+
         col_chk1, col_chk2 = st.columns(2)
         with col_chk1:
-            chk_epi           = st.checkbox("EPI confirmé", key="l0_chk_epi")
-            chk_consignation  = st.checkbox("Consignation électrique", key="l0_chk_consignation")
-            chk_pression      = st.checkbox("Pression contrôlée", key="l0_chk_pression")
+            chk_epi           = st.checkbox("EPI confirmé", key=f"l0_chk_epi_{signature}")
+            chk_consignation  = st.checkbox("Consignation électrique", key=f"l0_chk_consignation_{signature}")
+            chk_pression      = st.checkbox("Pression contrôlée", key=f"l0_chk_pression_{signature}")
         with col_chk2:
-            chk_habilitation  = st.checkbox("Habilitation confirmée", key="l0_chk_habilitation")
-            chk_autorisation  = st.checkbox("Autorisation d'intervention", key="l0_chk_autorisation")
+            chk_habilitation  = st.checkbox("Habilitation confirmée", key=f"l0_chk_habilitation_{signature}")
+            chk_autorisation  = st.checkbox("Autorisation d'intervention", key=f"l0_chk_autorisation_{signature}")
 
         if all([chk_epi, chk_consignation, chk_pression, chk_habilitation, chk_autorisation]):
-            st.success("✅ **INTERVENTION AUTORISÉE**")
+            st.success(f"✅ **INTERVENTION AUTORISÉE** (risque {niveau})")
         else:
             st.warning("⏳ En attente de confirmation des 5 points de contrôle avant autorisation.")
 
