@@ -11,6 +11,14 @@ import streamlit as st
 import notion_client as nc
 from shared_state import COMMON_CSS, init_session_state, update_sensors
 
+
+def _fmt_eur(v):
+    """Format monétaire avec point comme séparateur de milliers (ex: 7.800 €)
+    plutôt que la virgule par défaut de Python, ambiguë en français (où la
+    virgule est le séparateur décimal)."""
+    return f"{v:,.0f}".replace(",", ".")
+
+
 # ── PAGE CONFIG ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Sophie — Manager Maintenance", page_icon="📋", layout="wide")
 st.markdown(COMMON_CSS, unsafe_allow_html=True)
@@ -213,7 +221,7 @@ with tab1:
     col_c.markdown(
         f'<div style="background:#f8fafc;border-radius:8px;padding:16px;text-align:center;">'
         f'<div style="font-size:0.8rem;color:#64748b;">Impact estimé</div>'
-        f'<div style="font-size:2rem;font-weight:800;color:#b45309;">{impact:,} €</div>'
+        f'<div style="font-size:2rem;font-weight:800;color:#b45309;">{_fmt_eur(impact)} €</div>'
         f'</div>', unsafe_allow_html=True,
     )
 
@@ -249,7 +257,7 @@ with tab1:
     col_x.markdown(
         f'<div style="background:#f0fdf4;border-radius:8px;padding:16px;text-align:center;border:1px solid #86efac;">'
         f'<div style="font-size:0.8rem;color:#166534;font-weight:600;">✅ Intervenir maintenant</div>'
-        f'<div style="font-size:1.8rem;font-weight:800;color:#166534;">{cout_intervention:,} €</div>'
+        f'<div style="font-size:1.8rem;font-weight:800;color:#166534;">{_fmt_eur(cout_intervention)} €</div>'
         f'<div style="font-size:0.75rem;color:#64748b;margin-top:4px;">{cout_horaire}€/h technicien + {cout_arret_ligne}€/h ligne × {duree_intervention}h</div>'
         f'</div>', unsafe_allow_html=True,
     )
@@ -257,7 +265,7 @@ with tab1:
     col_y.markdown(
         f'<div style="background:#fef2f2;border-radius:8px;padding:16px;text-align:center;border:1px solid #fca5a5;">'
         f'<div style="font-size:0.8rem;color:#b91c1c;font-weight:600;">❌ Ne pas intervenir</div>'
-        f'<div style="font-size:1.8rem;font-weight:800;color:#b91c1c;">{impact:,} €</div>'
+        f'<div style="font-size:1.8rem;font-weight:800;color:#b91c1c;">{_fmt_eur(impact)} €</div>'
         f'<div style="font-size:0.75rem;color:#64748b;margin-top:4px;">Perte estimée si panne</div>'
         f'</div>', unsafe_allow_html=True,
     )
@@ -268,7 +276,7 @@ with tab1:
         couleur_reco = "#166534"
         fond_reco = "#f0fdf4"
         bordure_reco = "#86efac"
-        detail_reco = f"Économie estimée : {economie:,} €"
+        detail_reco = f"Économie estimée : {_fmt_eur(economie)} €"
     else:
         recommandation = "⏳ Reporter envisageable"
         couleur_reco = "#b45309"
@@ -305,7 +313,7 @@ with tab1:
                 "impact_eur":    impact,
                 "decision":      decision_label,
                 "resultat_reel": "En attente",
-                "commentaire":   f"Scénario {scenario_label} · Risque {risque}% · RUL projeté {rul_projete}j · Coût intervention {cout_intervention:,}€ · {recommandation}",
+                "commentaire":   f"Scénario {scenario_label} · Risque {risque}% · RUL projeté {rul_projete}j · Coût intervention {_fmt_eur(cout_intervention)}€ · {recommandation}",
             })
             st.success(f"✅ Décision enregistrée — {decision_label}")
             st.session_state["sophie_decision_verrouillee"] = True
