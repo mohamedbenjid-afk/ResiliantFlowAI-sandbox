@@ -286,7 +286,7 @@ def _section_identification(story, styles, ctx):
         ["Unité / Zone",         machine.get("unite", "Unité B — Zone Production")],
         ["Responsable machine",  machine.get("responsable", "Sophie M.")],
         ["Statut actuel",        machine.get("statut", "Alerte critique")],
-        ["RUL estimé",           f"{ctx.get('rul', 0)} heures"],
+        ["RUL estimé",           f"{ctx.get('rul', 0)} jours"],
         ["Température capteur",  f"{ctx.get('temp', 0):.1f} °C  (seuil : {machine.get('seuil_temp', 110)} °C)"],
         ["Vibration capteur",    f"{ctx.get('vib', 0):.2f} mm/s  (seuil : {machine.get('seuil_vib', 4.5)} mm/s)"],
         ["Pression capteur",     f"{ctx.get('pres', 0):.1f} bar"],

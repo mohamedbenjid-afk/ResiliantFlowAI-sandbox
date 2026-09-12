@@ -361,7 +361,7 @@ def run_agent_leila(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> s
         f"- Température : {c_temp:.1f}°C\n"
         f"- Vibration   : {c_vib:.2f} mm/s\n"
         f"- Pression    : {c_pres:.1f} bar\n"
-        f"- RUL estimé  : {c_rul}h\n\n"
+        f"- RUL estimé  : {c_rul} jours\n\n"
         f"Matrice des risques déjà calculée à partir des capteurs (autorité, ne "
         f"pas recalculer ni contredire) :\n{json.dumps(matrice, ensure_ascii=False)}\n\n"
         f"Rédige UNIQUEMENT les sections 3 à 5 : procédure LOTO, points de "

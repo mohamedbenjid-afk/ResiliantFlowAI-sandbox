@@ -34,7 +34,7 @@ if st.sidebar.button("⏸️ Pause / ▶️ Reprendre", use_container_width=True
 
 st.sidebar.caption("Statut machine : Pompe P-17 (Unité B)")
 st.sidebar.caption("Horodatage système : t = " + str(st.session_state.tick))
-st.sidebar.caption(f"RUL estimé : {c_rul}h — {r_status}")
+st.sidebar.caption(f"RUL estimé : {c_rul} j — {r_status}")
 st.sidebar.page_link("streamlit_home.py", label="⬅️ Retour à l'accueil", use_container_width=True)
 
 # ── CONTENU PRINCIPAL ─────────────────────────────────────────────────────────
@@ -63,12 +63,17 @@ with tab0:
     st.markdown("##### 📋 Matrice des risques — Anomalies capteurs détectées")
     st.write("L'agent AI analyse la signature de l'anomalie et pousse automatiquement les exigences de sécurité adaptées :")
 
-    if c_temp >= 110:
+    # Seuils alignés sur ceux d'agent_leila.py / agent_lionel.py (75°C alerte,
+    # 82°C critique · 2.5 mm/s alerte, 3.5 mm/s critique) — les anciennes
+    # valeurs (110°C / 4.5 mm/s) n'étaient jamais atteintes par le simulateur
+    # P-17, qui plafonne à ~85°C / ~3.9 mm/s en scénario critique : ces cartes
+    # ne s'affichaient donc jamais, y compris en pleine surchauffe.
+    if c_temp >= 75:
         st.markdown("🧱 **Risque Thermique Élevé (Surchauffe Stator) :**")
         st.markdown("- [ ] **EPI Obligatoire :** Gants isolants Haute Température (Norme EN 407).")
         st.markdown("- [ ] **Consigne :** Attendre le message de confirmation de baisse sous 45°C avant ouverture.")
 
-    if c_vib >= 4.5:
+    if c_vib >= 2.5:
         st.markdown("⚙️ **Risque Mécanique Élevé (Défaut Palier) :**")
         st.markdown("- [ ] **EPI Obligatoire :** Protection oculaire renforcée et casque anti-bruit (Vibrations acoustiques).")
         st.markdown("- [ ] **Consigne :** Vérifier l'ancrage et l'absence de micro-fissures sur le châssis.")
@@ -78,12 +83,12 @@ with tab0:
         st.markdown("- [ ] **EPI Obligatoire :** Écran facial et combinaison anti-projections.")
         st.markdown("- [ ] **Consigne :** Purger la pression résiduelle avant toute déconnexion de raccord.")
 
-    if c_rul <= 24 and c_temp < 110 and c_vib < 4.5 and c_pres < 7.0:
+    if c_rul <= 24 and c_temp < 75 and c_vib < 2.5 and c_pres < 7.0:
         st.markdown("⚠️ **RUL critique détecté — Risque générique :**")
         st.markdown("- [ ] Appliquer la procédure LOTO complète avant toute intervention.")
         st.markdown("- [ ] Vérifier les EPI standard (casque, chaussures de sécurité, gants).")
 
-    if c_temp < 110 and c_vib < 4.5 and c_pres < 7.0 and c_rul > 24:
+    if c_temp < 75 and c_vib < 2.5 and c_pres < 7.0 and c_rul > 24:
         st.markdown("- [ ] Appliquer les EPI standard (casque EN 397, chaussures S3, gants EN 388).")
 
     st.markdown("🔒 **Procédure LOTO systématique :** Sectionneur d'alimentation cadenassé en cellule BT.")
@@ -242,9 +247,11 @@ with tab2:
                 )
                 technicien_nom = technicien_data.get("nom", "Technicien de service")
 
-                if c_temp >= 110:
+                # Seuils alignés sur agent_leila.py (75°C/82°C, 2.5/3.5 mm/s) —
+                # voir commentaire équivalent en L0 plus haut dans ce fichier.
+                if c_temp >= 75:
                     type_anomalie = "Surchauffe stator — température critique"
-                elif c_vib >= 4.5:
+                elif c_vib >= 2.5:
                     type_anomalie = "Défaut palier — vibrations anormales"
                 elif c_pres >= 7.0:
                     type_anomalie = "Surpression circuit hydraulique"
