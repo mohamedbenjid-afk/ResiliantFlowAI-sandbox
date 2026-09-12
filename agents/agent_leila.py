@@ -310,10 +310,18 @@ jamais, ne les contredis jamais avec ta propre lecture des chiffres. Ta réponse
 ne couvre QUE les sections 3 à 5 ci-dessous (1 et 2 sont déjà affichées par
 ailleurs, ne les répète pas).
 
+Le message utilisateur te donne aussi les métadonnées déjà établies du dossier
+de preuve (référence, date, technicien référent, statut, validité) — reprends
+CES VALEURS EXACTES dans ta section 5, mot pour mot, en particulier le nom du
+technicien. Ne les invente jamais, ne les paraphrase jamais, ne décris jamais
+le mécanisme qui les a produites (ex: jamais de formulation du type "résolu
+automatiquement" à la place du nom réel) : recopie la valeur telle quelle.
+
 Format de réponse attendu (sections 3 à 5 uniquement) :
 3. **Procédure LOTO** : étapes obligatoires si applicable
 4. **Points de non-conformité** : ce qui manque ou doit être corrigé
-5. **Dossier de preuve** : référence du rapport généré et contenu
+5. **Dossier de preuve** : référence, date, technicien, statut et contenu — à
+   partir des valeurs fournies, mises en forme dans ton style
 
 Sois précis sur les normes (EN, ISO, NF). Leila répond devant un auditeur externe.
 """
@@ -350,30 +358,43 @@ def run_agent_leila(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> s
     risque HSE étant une donnée réglementaire, on ne peut pas la laisser
     dépendre du bon vouloir du LLM : on la calcule nous-mêmes en Python
     (déterministe, jamais halluciné) et on l'affiche en tête de réponse,
-    garantie exacte. Le LLM ne rédige plus que les sections annexes (LOTO,
-    non-conformités, dossier de preuve) à partir des autres outils Notion.
+    garantie exacte. Idem pour le dossier de preuve (section 5) : le LLM
+    avait tendance à paraphraser la DESCRIPTION de l'outil generer_rapport_audit
+    ("technicien résolu automatiquement depuis Notion") au lieu de recopier la
+    vraie valeur qu'il contenait — on résout donc aussi ces métadonnées nous-
+    mêmes et on les fournit comme des faits établis dans le prompt. Le LLM
+    garde la plume : il rédige TOUTES les sections narratives (3 à 5), juste
+    avec des faits qu'on lui impose plutôt qu'il n'a à recalculer ou deviner.
     """
-    matrice = get_matrice_risques_capteurs(c_temp, c_vib, c_pres)
-    entete = _rendre_matrice_markdown(matrice)
+    equipement = "Pompe P-17"
+    matrice  = get_matrice_risques_capteurs(c_temp, c_vib, c_pres)
+    dossier  = generer_rapport_audit(equipement)
+    entete   = _rendre_matrice_markdown(matrice)
 
     situation = (
-        f"ÉVALUATION HSE — Pompe P-17, Unité B\n"
+        f"ÉVALUATION HSE — {equipement}, Unité B\n"
         f"- Température : {c_temp:.1f}°C\n"
         f"- Vibration   : {c_vib:.2f} mm/s\n"
         f"- Pression    : {c_pres:.1f} bar\n"
         f"- RUL estimé  : {c_rul} jours\n\n"
         f"Matrice des risques déjà calculée à partir des capteurs (autorité, ne "
         f"pas recalculer ni contredire) :\n{json.dumps(matrice, ensure_ascii=False)}\n\n"
-        f"Rédige UNIQUEMENT les sections 3 à 5 : procédure LOTO, points de "
-        f"non-conformité et dossier de preuve. Utilise les outils disponibles "
-        f"pour les exigences HSE/habilitations et la conformité des pièces, "
-        f"puis génère le dossier d'audit."
+        f"Dossier de preuve déjà généré (autorité — reprends ces valeurs "
+        f"EXACTEMENT telles quelles dans ta section 5, en particulier "
+        f"'technicien_concerne' ; n'en invente aucune autre) :\n"
+        f"{json.dumps(dossier, ensure_ascii=False)}\n\n"
+        f"Rédige les sections 3 à 5 : procédure LOTO, points de non-conformité "
+        f"et dossier de preuve (à partir des valeurs ci-dessus). Utilise les "
+        f"outils disponibles pour les exigences HSE/habilitations et la "
+        f"conformité des pièces."
     )
 
-    # get_matrice_risques_capteurs est déjà calculé ci-dessus : on ne le
-    # propose plus au LLM, pour éviter un second calcul incohérent avec
-    # l'entête déterministe déjà affichée.
-    outils_restants = [t for t in TOOLS if t["name"] != "get_matrice_risques_capteurs"]
+    # get_matrice_risques_capteurs et generer_rapport_audit sont déjà calculés
+    # ci-dessus et injectés comme faits dans le prompt : on ne les propose plus
+    # au LLM en tant qu'outils, pour éviter un second calcul (ou une invention)
+    # incohérent avec ce qui est déjà fourni.
+    outils_restants = [t for t in TOOLS
+                        if t["name"] not in ("get_matrice_risques_capteurs", "generer_rapport_audit")]
 
     messages = [{"role": "user", "content": situation}]
     max_iterations = 6

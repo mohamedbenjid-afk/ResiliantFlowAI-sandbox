@@ -130,7 +130,22 @@ with tab0:
         matrice     = st.session_state.get("leila_matrice") or {}
         niveau      = matrice.get("risque_maximal", "—")
         risques     = matrice.get("risques_identifies", [])
-        epi_requis  = sorted({epi for r in risques for epi in (r.get("epi") or [])})
+        epi_capteurs = {epi for r in risques for epi in (r.get("epi") or [])}
+
+        # EPI complémentaires réellement documentés dans Notion (base
+        # "Documentation & HSE", champ "EPI obligatoires") pour cette machine —
+        # fusionnés avec les EPI déduits des capteurs, plutôt que de ne
+        # s'appuyer que sur le dictionnaire fixe EPI_PAR_RISQUE du code.
+        try:
+            import notion_client as nc
+            epi_notion = {
+                epi for d in nc.get_docs_hse(machine_id="P-17")
+                for epi in (d.get("epi") or [])
+            }
+        except Exception:
+            epi_notion = set()
+
+        epi_requis = sorted(epi_capteurs | epi_notion)
 
         # Signature du contenu de la matrice : sert de suffixe aux clés des
         # cases à cocher. Si l'évaluation change (nouveau risque, nouveaux
