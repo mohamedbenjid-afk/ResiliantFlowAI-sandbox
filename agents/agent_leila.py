@@ -90,27 +90,36 @@ def get_exigences_hse_intervention(equipement: str) -> dict:
 
 
 def get_matrice_risques_capteurs(c_temp: float, c_vib: float, c_pres: float) -> dict:
-    """Génère la matrice de risques à partir des valeurs capteurs en temps réel."""
+    """Génère la matrice de risques à partir des valeurs capteurs en temps réel.
+
+    CORRECTION : les seuils thermique/vibration étaient calés à 110°C / 4.5 mm/s,
+    des valeurs jamais atteintes par le simulateur P-17 (shared_state.py / api_rul.py
+    plafonnent à ~85°C / ~3.9 mm/s en scénario "critique"). Résultat : cette matrice
+    restait bloquée sur "FAIBLE" même en état critique, en contradiction avec Lionel
+    qui considère déjà 82°C / 3.5 mm/s comme seuils critiques (agent_lionel.py) sur
+    la MÊME pompe. Seuils réalignés sur ceux de Lionel pour rester cohérent entre
+    personas.
+    """
     risques = []
 
-    if c_temp >= 110:
+    if c_temp >= 75:
         risques.append({
             "type":      "Thermique",
-            "niveau":    "ÉLEVÉ" if c_temp >= 120 else "MODÉRÉ",
+            "niveau":    "ÉLEVÉ" if c_temp >= 82 else "MODÉRÉ",
             "valeur":    f"{c_temp:.1f}°C",
-            "seuil":     "110°C",
+            "seuil":     "75°C (alerte) / 82°C (critique)",
             "cause":     "Surchauffe stator / garniture mécanique",
             "epi":       EPI_PAR_RISQUE["thermique"],
             "consignes": ["Attendre refroidissement < 45°C avant ouverture", "Ne pas toucher les surfaces"],
             "norme":     "EN 563 — Températures de surface",
         })
 
-    if c_vib >= 4.5:
+    if c_vib >= 2.5:
         risques.append({
             "type":      "Mécanique",
-            "niveau":    "ÉLEVÉ" if c_vib >= 6.0 else "MODÉRÉ",
+            "niveau":    "ÉLEVÉ" if c_vib >= 3.5 else "MODÉRÉ",
             "valeur":    f"{c_vib:.2f} mm/s",
-            "seuil":     "4.5 mm/s",
+            "seuil":     "2.5 mm/s (alerte) / 3.5 mm/s (critique)",
             "cause":     "Défaut palier / roulement dégradé",
             "epi":       EPI_PAR_RISQUE["mecanique"],
             "consignes": ["Vérifier l'ancrage du châssis", "Contrôler absence de micro-fissures"],
@@ -284,6 +293,13 @@ Tu analyses les situations d'intervention pour garantir la conformité ISO 45001
 
 Ton rôle : identifier les risques réglementaires, prescrire les EPI obligatoires,
 vérifier la conformité des procédures et générer les preuves d'audit.
+
+RÈGLE IMPÉRATIVE : appelle TOUJOURS get_matrice_risques_capteurs avec les valeurs
+capteurs fournies avant de conclure. Le champ "risque_maximal" qu'il retourne EST
+le niveau de risque global — ne l'invente jamais toi-même et ne le contredis
+jamais avec ta propre estimation des valeurs capteurs. Base la section "Matrice
+des risques identifiés" uniquement sur la liste "risques_identifies" retournée
+par l'outil, pas sur ton jugement personnel des chiffres.
 
 Format de réponse attendu :
 1. **Niveau de risque global** : FAIBLE / MODÉRÉ / ÉLEVÉ avec justification
