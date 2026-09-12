@@ -188,8 +188,18 @@ def get_conformite_pieces(equipement: str) -> dict:
     }
 
 
-def generer_rapport_audit(equipement: str, technicien: str = "Lionel") -> dict:
-    """Génère les métadonnées du dossier de preuve ISO 45001."""
+def generer_rapport_audit(equipement: str) -> dict:
+    """Génère les métadonnées du dossier de preuve ISO 45001.
+
+    CORRECTION : le nom du technicien était auparavant un paramètre libre que
+    le LLM devait renseigner — en pratique il recopiait souvent la
+    description du champ ("Nom du technicien intervenant") faute de savoir
+    quoi y mettre. Le technicien référent est maintenant résolu directement
+    depuis Notion (fiche machine), une donnée factuelle qu'on ne fait jamais
+    dépendre du LLM.
+    """
+    machine    = nc.get_machine(equipement) or {}
+    technicien = (machine.get("responsable") or "").strip() or "Lionel"
     today = date.today().isoformat()
     ref   = f"RF_AUDIT_ISO45001_{equipement.replace(' ', '_').replace('-', '')}_{today}.pdf"
     return {
@@ -239,12 +249,11 @@ TOOLS = [
     },
     {
         "name": "generer_rapport_audit",
-        "description": "Génère les métadonnées du dossier de preuve ISO 45001 avec référence, horodatage et contenu certifié.",
+        "description": "Génère les métadonnées du dossier de preuve ISO 45001 avec référence, horodatage et contenu certifié. Le technicien référent est résolu automatiquement depuis Notion.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "equipement":  {"type": "string"},
-                "technicien":  {"type": "string", "description": "Nom du technicien intervenant"}
             },
             "required": ["equipement"]
         }
@@ -256,7 +265,7 @@ def _execute(name, inputs):
     if name == "get_exigences_hse_intervention": return get_exigences_hse_intervention(inputs["equipement"])
     if name == "get_matrice_risques_capteurs":   return get_matrice_risques_capteurs(inputs["c_temp"], inputs["c_vib"], inputs["c_pres"])
     if name == "get_conformite_pieces":          return get_conformite_pieces(inputs["equipement"])
-    if name == "generer_rapport_audit":          return generer_rapport_audit(inputs["equipement"], inputs.get("technicien", "Lionel"))
+    if name == "generer_rapport_audit":          return generer_rapport_audit(inputs["equipement"])
     return {"erreur": f"Outil inconnu : {name}"}
 
 
