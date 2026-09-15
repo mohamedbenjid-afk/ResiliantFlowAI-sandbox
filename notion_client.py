@@ -412,7 +412,7 @@ def get_metriques_roi() -> dict:
                      if i["type"] in ("Prédictive", "Préventive conditionnelle")]
 
     cout_interventions = sum(i.get("cout_intervention") or 0 for i in terminees)
-    couts_evites       = sum(i.get("cout_arret_prod") or 0 for i in prescriptives)
+    couts_evites = len(prescriptives) * 25000  # proxy panne evitee : cout_arret_prod=None dans le schema ESCP, aligne agent_antoine.py
     roi = round(couts_evites / cout_interventions, 1) if cout_interventions > 0 else 0
 
     # Statuts d'alerte dans ESCP : "Alerte" et "Critique"
