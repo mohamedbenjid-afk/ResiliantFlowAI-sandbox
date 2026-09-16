@@ -1,15 +1,37 @@
 """
 utils/pdf_codir.py
 Générateur de Fiche CODIR — Décision d'investissement maintenance
-Format : 2 pages A4, design exécutif, ReportLab Platypus
+Format : 1 page A4, design exécutif, ReportLab Platypus
 
 Usage:
     from utils.pdf_codir import generate_codir_pdf
     pdf_bytes = generate_codir_pdf(result)   # result = run_agent_antoine()
     st.download_button("Télécharger", pdf_bytes, file_name="CODIR_Antoine.pdf")
+
+Correctifs (revue Antoine) :
+  - _portfolio() : colonne "Dégradation" retirée (score_degradation_pct est
+    TOUJOURS None dans agent_antoine.py, absent du schéma ESCP) — affichait
+    littéralement "None %" sur chaque ligne.
+  - _scenarios() : "Point mort" du scénario C affiche "—" au lieu de
+    "None mois vs A" quand payback_vs_correctif_mois vaut None.
+  - _signatures() : BUG DE MISE EN PAGE CORRIGÉ. L'ancienne version empilait
+    des listes de Flowables brutes dans une cellule de Table à une seule
+    ligne — les noms des signataires (Antoine, Agent AI, PDG) disparaissaient
+    du rendu et le texte "Signature : ___" débordait hors de la page.
+    Reconstruit en tableau multi-lignes classique (une ligne par info :
+    nom / rôle / fonction / ligne de signature), chaque cellule étant un
+    Paragraph correctement dimensionné à sa colonne — plus de débordement,
+    alignement propre en 3 colonnes.
+  - _analyse() : tronquée à ~220 caractères (2-3 lignes) au lieu des 25
+    premières lignes brutes du markdown LLM, dont la longueur est
+    imprévisible. Nécessaire pour garantir que le document tienne sur UNE
+    page quelle que soit la longueur du texte généré par le LLM. L'analyse
+    complète reste consultable dans l'app Streamlit (onglet CODIR).
+  - Marges et espacements resserrés dans tout le document pour gagner de
+    la place et tenir sur une seule page A4.
 """
 
-import io, hashlib
+import io, hashlib, re
 from datetime import datetime, date
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm, mm
@@ -51,19 +73,19 @@ class _PT:
         canvas.saveState()
         # Header band
         canvas.setFillColor(BLEU)
-        canvas.rect(0, H - 1.4*cm, W, 1.4*cm, fill=1, stroke=0)
+        canvas.rect(0, H - 1.2*cm, W, 1.2*cm, fill=1, stroke=0)
         canvas.setFont("Helvetica-Bold", 9)
         canvas.setFillColor(white)
-        canvas.drawString(1.8*cm, H - 0.95*cm, "CONFIDENTIEL — FICHE CODIR")
+        canvas.drawString(1.5*cm, H - 0.8*cm, "CONFIDENTIEL — FICHE CODIR")
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(AMBRE)
-        canvas.drawRightString(W - 1.8*cm, H - 0.95*cm, self.ref)
+        canvas.drawRightString(W - 1.5*cm, H - 0.8*cm, self.ref)
         # Footer band
         canvas.setFillColor(GRIS_C)
-        canvas.rect(0, 0, W, 1.0*cm, fill=1, stroke=0)
-        canvas.setFont("Helvetica", 7.5)
+        canvas.rect(0, 0, W, 0.8*cm, fill=1, stroke=0)
+        canvas.setFont("Helvetica", 7)
         canvas.setFillColor(GRIS_M)
-        canvas.drawCentredString(W/2, 0.35*cm,
+        canvas.drawCentredString(W/2, 0.28*cm,
             f"ResilientFlow AI — Généré le {self.generated_at} — Page {doc.page}")
         canvas.restoreState()
 
@@ -73,19 +95,19 @@ def _S():
     s = {}
     def ps(name, **kw):
         s[name] = ParagraphStyle(name, **kw)
-    ps("h1",       fontName="Helvetica-Bold", fontSize=18, textColor=white,    alignment=TA_CENTER, spaceAfter=2)
-    ps("h1sub",    fontName="Helvetica",      fontSize=10, textColor=HexColor("#93c5fd"), alignment=TA_CENTER)
-    ps("ref",      fontName="Helvetica-Bold", fontSize=9,  textColor=AMBRE,    alignment=TA_CENTER)
-    ps("sec",      fontName="Helvetica-Bold", fontSize=10, textColor=white,    spaceBefore=3, spaceAfter=2)
-    ps("body",     fontName="Helvetica",      fontSize=9,  textColor=GRIS_F,   leading=13, spaceAfter=2)
-    ps("body_b",   fontName="Helvetica-Bold", fontSize=9,  textColor=GRIS_F,   leading=13)
-    ps("small",    fontName="Helvetica",      fontSize=8,  textColor=GRIS_M,   leading=11)
-    ps("kpi_val",  fontName="Helvetica-Bold", fontSize=15, textColor=BLEU_MED, alignment=TA_CENTER)
-    ps("kpi_lbl",  fontName="Helvetica",      fontSize=8,  textColor=GRIS_M,   alignment=TA_CENTER)
-    ps("reco",     fontName="Helvetica-Bold", fontSize=11, textColor=BLEU,     leading=16, spaceAfter=4)
-    ps("footer_c", fontName="Helvetica",      fontSize=8,  textColor=GRIS_M,   alignment=TA_CENTER)
+    ps("h1",       fontName="Helvetica-Bold", fontSize=16, textColor=white,    alignment=TA_CENTER, spaceAfter=1)
+    ps("h1sub",    fontName="Helvetica",      fontSize=9,  textColor=HexColor("#93c5fd"), alignment=TA_CENTER)
+    ps("ref",      fontName="Helvetica-Bold", fontSize=8,  textColor=AMBRE,    alignment=TA_CENTER)
+    ps("sec",      fontName="Helvetica-Bold", fontSize=9.5,textColor=white,    spaceBefore=2, spaceAfter=1)
+    ps("body",     fontName="Helvetica",      fontSize=8.5,textColor=GRIS_F,   leading=11.5, spaceAfter=1)
+    ps("body_b",   fontName="Helvetica-Bold", fontSize=8.5,textColor=GRIS_F,   leading=11.5)
+    ps("small",    fontName="Helvetica",      fontSize=7.5,textColor=GRIS_M,   leading=10)
+    ps("kpi_val",  fontName="Helvetica-Bold", fontSize=13, textColor=BLEU_MED, alignment=TA_CENTER)
+    ps("kpi_lbl",  fontName="Helvetica",      fontSize=7.5,textColor=GRIS_M,   alignment=TA_CENTER)
+    ps("reco",     fontName="Helvetica-Bold", fontSize=10, textColor=BLEU,     leading=14, spaceAfter=2)
+    ps("footer_c", fontName="Helvetica",      fontSize=7,  textColor=GRIS_M,   alignment=TA_CENTER)
     ps("sig_lbl",  fontName="Helvetica-Bold", fontSize=9,  textColor=BLEU,     alignment=TA_CENTER)
-    ps("sig_sub",  fontName="Helvetica",      fontSize=8,  textColor=GRIS_M,   alignment=TA_CENTER)
+    ps("sig_sub",  fontName="Helvetica",      fontSize=7.5,textColor=GRIS_M,   alignment=TA_CENTER)
     return s
 
 
@@ -93,8 +115,8 @@ def _sec_header(text, s):
     tbl = Table([[Paragraph(text, s["sec"])]], colWidths=[W - 4*cm])
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,-1), BLEU),
-        ("TOPPADDING",    (0,0), (-1,-1), 5),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ("TOPPADDING",    (0,0), (-1,-1), 3),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 3),
         ("LEFTPADDING",   (0,0), (-1,-1), 10),
     ]))
     return tbl
@@ -110,13 +132,13 @@ def _cover(story, s, ctx):
     ]], colWidths=[W - 4*cm])
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,-1), BLEU),
-        ("TOPPADDING",    (0,0), (-1,-1), 18),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 18),
+        ("TOPPADDING",    (0,0), (-1,-1), 10),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 10),
         ("LEFTPADDING",   (0,0), (-1,-1), 20),
         ("ROWBACKGROUNDS",(0,0), (-1,-1), [BLEU]),
     ]))
     story.append(tbl)
-    story.append(Spacer(1, 0.4*cm))
+    story.append(Spacer(1, 0.2*cm))
 
     # Tableau info
     eq    = ctx.get("equipement", "—")
@@ -135,18 +157,18 @@ def _cover(story, s, ctx):
     t.setStyle(TableStyle([
         ("FONTNAME",  (0,0), (0,-1), "Helvetica-Bold"),
         ("FONTNAME",  (2,0), (2,-1), "Helvetica-Bold"),
-        ("FONTSIZE",  (0,0), (-1,-1), 9),
+        ("FONTSIZE",  (0,0), (-1,-1), 8),
         ("TEXTCOLOR", (0,0), (0,-1), BLEU),
         ("TEXTCOLOR", (2,0), (2,-1), BLEU),
         ("BACKGROUND",(0,0), (-1,-1), GRIS_TC),
         ("ROWBACKGROUNDS", (0,0), (-1,-1), [white, GRIS_TC]),
         ("GRID",      (0,0), (-1,-1), 0.5, HexColor("#e5e7eb")),
-        ("TOPPADDING",(0,0), (-1,-1), 5),
-        ("BOTTOMPADDING",(0,0),(-1,-1), 5),
+        ("TOPPADDING",(0,0), (-1,-1), 3),
+        ("BOTTOMPADDING",(0,0),(-1,-1), 3),
         ("LEFTPADDING", (0,0),(-1,-1), 8),
     ]))
     story.append(t)
-    story.append(Spacer(1, 0.3*cm))
+    story.append(Spacer(1, 0.15*cm))
 
     # Signature SHA-256
     h = hashlib.sha256(f"{ctx['reference']}{ctx['date_codir']}{eq}".encode()).hexdigest()[:32]
@@ -154,19 +176,19 @@ def _cover(story, s, ctx):
                     colWidths=[W - 4*cm])
     sig_tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,-1), AMBRE_CLAIR),
-        ("TOPPADDING",    (0,0), (-1,-1), 5),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ("TOPPADDING",    (0,0), (-1,-1), 3),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 3),
         ("LEFTPADDING",   (0,0), (-1,-1), 10),
         ("BOX",           (0,0), (-1,-1), 1, AMBRE),
     ]))
     story.append(sig_tbl)
-    story.append(Spacer(1, 0.4*cm))
+    story.append(Spacer(1, 0.2*cm))
 
 
 # ── KPIs CLÉS ─────────────────────────────────────────────────────────────────
 def _kpis(story, s, ctx):
     story.append(_sec_header("1. INDICATEURS CLÉS", s))
-    story.append(Spacer(1, 0.2*cm))
+    story.append(Spacer(1, 0.1*cm))
 
     hist = ctx.get("historique") or {}
     def _kv(v, suffix="", fallback="—"):
@@ -184,15 +206,14 @@ def _kpis(story, s, ctx):
     ]
     cells_val = [[Paragraph(v, s["kpi_val"]) for v, _, _ in kpis]]
     cells_lbl = [[Paragraph(l, s["kpi_lbl"]) for _, l, _ in kpis]]
-    bg_colors = [c for _, _, c in kpis]
 
     col_w = (W - 4*cm) / 6
     tv = Table(cells_val, colWidths=[col_w]*6)
     tl = Table(cells_lbl, colWidths=[col_w]*6)
     bg_style = [
         ("ALIGN",         (0,0), (-1,-1), "CENTER"),
-        ("TOPPADDING",    (0,0), (-1,-1), 6),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+        ("TOPPADDING",    (0,0), (-1,-1), 4),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 2),
     ]
     for i, (_, _, c) in enumerate(kpis):
         bg_style.append(("BACKGROUND", (i,0), (i,-1), c))
@@ -200,46 +221,50 @@ def _kpis(story, s, ctx):
         tbl.setStyle(TableStyle(bg_style))
     story.append(tv)
     story.append(tl)
-    story.append(Spacer(1, 0.3*cm))
+    story.append(Spacer(1, 0.15*cm))
 
 
 # ── PORTFOLIO MACHINES ────────────────────────────────────────────────────────
 def _portfolio(story, s, ctx):
+    """
+    Colonne "Dégradation" supprimée : score_degradation_pct vaut TOUJOURS
+    None dans agent_antoine.py (absent du schéma ESCP) -> affichait
+    littéralement "None %" sur chaque ligne. 5 colonnes au lieu de 6.
+    """
     portfolio = ctx.get("portfolio")
     if not portfolio:
         return
     story.append(_sec_header("2. PORTFOLIO MACHINES — RANKING PAR RISQUE", s))
-    story.append(Spacer(1, 0.2*cm))
+    story.append(Spacer(1, 0.1*cm))
 
-    hdr = [["Machine", "Unité", "RUL (j)", "Dégradation", "Score risque", "Niveau"]]
+    hdr = [["Machine", "Unité", "RUL (j)", "Score risque", "Niveau"]]
     rows = []
     for m in portfolio.get("ranking", []):
         rows.append([
             m.get("machine", ""),
             m.get("unite", ""),
             str(m.get("rul_jours", 0)),
-            f"{m.get('score_degradation_pct', 0)} %",
             f"{m.get('score_risque', 0)} / 100",
             m.get("niveau_risque", ""),
         ])
 
     data   = hdr + rows
-    col_ws = [5.5*cm, 2.5*cm, 2*cm, 3*cm, 3*cm, 4*cm]
+    col_ws = [5.5*cm, 2.5*cm, 2*cm, 3*cm, 4*cm]
     t = Table(data, colWidths=col_ws)
 
     style = [
         ("BACKGROUND",    (0,0), (-1,0), BLEU_MED),
         ("TEXTCOLOR",     (0,0), (-1,0), white),
         ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
-        ("FONTSIZE",      (0,0), (-1,-1), 8.5),
+        ("FONTSIZE",      (0,0), (-1,-1), 8),
         ("GRID",          (0,0), (-1,-1), 0.4, HexColor("#e5e7eb")),
         ("ALIGN",         (2,0), (-1,-1), "CENTER"),
-        ("TOPPADDING",    (0,0), (-1,-1), 4),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+        ("TOPPADDING",    (0,0), (-1,-1), 3),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 3),
         ("LEFTPADDING",   (0,0), (-1,-1), 6),
     ]
     for i, row in enumerate(rows, 1):
-        niveau = row[5]
+        niveau = row[4]  # index décalé de 5 -> 4 après suppression de la colonne Dégradation
         bg = (ROUGE_CLAIR  if "CRITIQUE" in niveau else
               ORANGE_CLAIR if "ÉLEVÉ"    in niveau else
               AMBRE_CLAIR  if "MODÉRÉ"   in niveau else VERT_CLAIR)
@@ -247,7 +272,7 @@ def _portfolio(story, s, ctx):
 
     t.setStyle(TableStyle(style))
     story.append(t)
-    story.append(Spacer(1, 0.3*cm))
+    story.append(Spacer(1, 0.15*cm))
 
 
 # ── TABLEAU 3 SCÉNARIOS ───────────────────────────────────────────────────────
@@ -256,13 +281,12 @@ def _scenarios(story, s, ctx):
     if not sc:
         return
     story.append(_sec_header("3. SIMULATION FINANCIÈRE — 3 SCÉNARIOS", s))
-    story.append(Spacer(1, 0.2*cm))
+    story.append(Spacer(1, 0.1*cm))
 
     sc_data = sc.get("scenarios", {})
     horizon = sc.get("horizon_ans", 3)
     hyp     = sc.get("hypotheses", {})
 
-    # Hypothèses
     hyp_txt = (
         f"Hypothèses : coût panne moyen {hyp.get('cout_panne_moyen_eur', 0):,.0f} € · "
         f"{hyp.get('pannes_par_an_sans_prescriptif', 0)} pannes/an sans prescriptif · "
@@ -270,18 +294,24 @@ def _scenarios(story, s, ctx):
         f"taux actualisation 5%"
     )
     story.append(Paragraph(hyp_txt, s["small"]))
-    story.append(Spacer(1, 0.15*cm))
+    story.append(Spacer(1, 0.1*cm))
 
     a = sc_data.get("A_correctif_pur", {})
     b = sc_data.get("B_maintien_prescriptif", {})
     c = sc_data.get("C_remplacement", {})
+
+    # Correctif : payback_vs_correctif_mois peut valoir None. .get(clé, "—")
+    # ne déclenche le fallback que si la clé est absente, pas si sa valeur
+    # est None -> affichait "None mois vs A". Test explicite ajouté.
+    payback_val = c.get("payback_vs_correctif_mois")
+    payback_str = f"{payback_val} mois vs A" if payback_val is not None else "—"
 
     hdr  = [["", "A — Correctif pur", "B — Prescriptif (actuel)", f"C — Remplacement"]]
     rows = [
         ["Description",    a.get("description","")[:35], b.get("description","")[:35], c.get("description","")[:35]],
         ["Coût total", f"{a.get('cout_total_eur',0):,.0f} €", f"{b.get('cout_total_eur',0):,.0f} €", f"{c.get('cout_total_eur',0):,.0f} €"],
         ["NPV",        f"{a.get('npv_eur',0):,.0f} €",       f"{b.get('npv_eur',0):,.0f} €",       f"{c.get('npv_eur',0):,.0f} €"],
-        ["Point mort", "—", "—", f"{c.get('payback_vs_correctif_mois','—')} mois vs A"],
+        ["Point mort", "—", "—", payback_str],
     ]
     data   = hdr + rows
     col_ws = [3.5*cm, 5.5*cm, 5.5*cm, 5.5*cm]
@@ -296,51 +326,57 @@ def _scenarios(story, s, ctx):
         ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
         ("FONTNAME",      (0,1), (0,-1), "Helvetica-Bold"),
         ("TEXTCOLOR",     (0,1), (0,-1), BLEU),
-        ("FONTSIZE",      (0,0), (-1,-1), 8.5),
+        ("FONTSIZE",      (0,0), (-1,-1), 8),
         ("GRID",          (0,0), (-1,-1), 0.4, HexColor("#e5e7eb")),
         ("ALIGN",         (1,0), (-1,-1), "CENTER"),
-        ("TOPPADDING",    (0,0), (-1,-1), 5),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ("TOPPADDING",    (0,0), (-1,-1), 3),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 3),
         ("LEFTPADDING",   (0,0), (-1,-1), 6),
         ("ROWBACKGROUNDS",(0,1), (-1,-1), [white, GRIS_TC, white, GRIS_TC]),
-        # Colonne meilleure en vert clair
         ("BACKGROUND", (best_col, 1), (best_col, -1), VERT_CLAIR),
     ]
     t.setStyle(TableStyle(style))
     story.append(t)
 
     eco = sc.get("economie_prescriptif_vs_correctif_eur", 0)
-    story.append(Spacer(1, 0.15*cm))
+    story.append(Spacer(1, 0.1*cm))
     story.append(Paragraph(
         f"✅ Économie prescriptif vs correctif sur {horizon} ans : <b>{eco:,.0f} €</b> — "
         f"Recommandation : <b>{reco}</b>",
         s["body"]
     ))
-    story.append(Spacer(1, 0.3*cm))
+    story.append(Spacer(1, 0.15*cm))
 
 
-# ── ANALYSE LLM (extrait) ─────────────────────────────────────────────────────
+# ── ANALYSE LLM (extrait très court) ──────────────────────────────────────────
 def _analyse(story, s, ctx):
+    """
+    Version tronquée à ~220 caractères (2-3 lignes) au lieu des 25 premières
+    lignes brutes du markdown. Nécessaire pour garantir 1 page quelle que
+    soit la longueur du texte généré par le LLM (imprévisible). L'analyse
+    complète reste disponible dans l'app Streamlit (onglet CODIR).
+    """
     analyse = ctx.get("analyse", "")
     if not analyse:
         return
     story.append(_sec_header("4. ANALYSE AGENT AI — SYNTHÈSE", s))
-    story.append(Spacer(1, 0.2*cm))
+    story.append(Spacer(1, 0.1*cm))
 
-    # On prend les 800 premiers caractères de l'analyse (synthèse exécutive)
-    lines = analyse.split("\n")
-    for line in lines[:25]:
-        line = line.strip()
-        if not line:
-            story.append(Spacer(1, 0.1*cm))
-            continue
-        if line.startswith("##"):
-            story.append(Paragraph(line.replace("#","").strip(), s["body_b"]))
-        elif line.startswith("**") and line.endswith("**"):
-            story.append(Paragraph(line.replace("**",""), s["body_b"]))
-        else:
-            story.append(Paragraph(line.replace("**","<b>",1).replace("**","</b>",1), s["body"]))
-    story.append(Spacer(1, 0.3*cm))
+    # Nettoyage markdown basique (titres, gras) -> texte brut sur une ligne
+    plain = re.sub(r'^#+\s*', '', analyse, flags=re.MULTILINE)
+    plain = plain.replace('**', '').replace('\n', ' ').strip()
+    plain = re.sub(r'\s+', ' ', plain)
+
+    MAX_CHARS = 220
+    if len(plain) > MAX_CHARS:
+        plain = plain[:MAX_CHARS].rsplit(' ', 1)[0] + '…'
+
+    story.append(Paragraph(plain, s["body"]))
+    story.append(Paragraph(
+        "Analyse complète disponible dans l'application ResilientFlow AI (onglet CODIR).",
+        s["small"]
+    ))
+    story.append(Spacer(1, 0.15*cm))
 
 
 # ── RECOMMANDATION ENCADRÉE ───────────────────────────────────────────────────
@@ -353,7 +389,7 @@ def _recommandation(story, s, ctx):
     mtbf = hist.get("mtbf_jours", "—")
 
     story.append(_sec_header("5. RECOMMANDATION CODIR", s))
-    story.append(Spacer(1, 0.2*cm))
+    story.append(Spacer(1, 0.1*cm))
 
     reco_text = (
         f"Sur la base de l'analyse des données de fiabilité, de l'historique de maintenance "
@@ -367,42 +403,52 @@ def _recommandation(story, s, ctx):
     tbl = Table([[Paragraph(reco_text, s["reco"])]], colWidths=[W - 4*cm])
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,-1), BLEU_CLAIR),
-        ("TOPPADDING",    (0,0), (-1,-1), 12),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 12),
-        ("LEFTPADDING",   (0,0), (-1,-1), 14),
-        ("RIGHTPADDING",  (0,0), (-1,-1), 14),
+        ("TOPPADDING",    (0,0), (-1,-1), 8),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 8),
+        ("LEFTPADDING",   (0,0), (-1,-1), 12),
+        ("RIGHTPADDING",  (0,0), (-1,-1), 12),
         ("BOX",           (0,0), (-1,-1), 1.5, BLEU_MED),
     ]))
     story.append(tbl)
-    story.append(Spacer(1, 0.4*cm))
+    story.append(Spacer(1, 0.2*cm))
 
 
 # ── SIGNATURES ────────────────────────────────────────────────────────────────
 def _signatures(story, s, ctx):
+    """
+    Correctif : reconstruit en tableau multi-lignes classique.
+    L'ancienne version empilait des listes de Flowables brutes dans une
+    cellule de Table à une seule ligne, ce qui faisait disparaître les
+    noms des signataires du rendu et provoquait un débordement du texte
+    "Signature : ___" hors de la page. Chaque cellule est désormais un
+    Paragraph correctement dimensionné à la largeur de sa colonne — plus
+    de débordement, alignement propre en 3 colonnes bien délimitées.
+    """
     story.append(HRFlowable(width="100%", thickness=0.5, color=GRIS_M))
-    story.append(Spacer(1, 0.3*cm))
+    story.append(Spacer(1, 0.15*cm))
 
     signataires = [
-        ("Antoine", "Directeur Technique",    "Décision CAPEX/OPEX"),
-        ("Agent AI", "ResilientFlow AI",       "Analyse prescriptive"),
-        ("PDG",      "Direction Générale",     "Validation budgétaire"),
+        ("Antoine",  "Directeur Technique", "Décision CAPEX/OPEX"),
+        ("Agent AI", "ResilientFlow AI",    "Analyse prescriptive"),
+        ("PDG",      "Direction Générale",  "Validation budgétaire"),
     ]
-    cells = [[
-        [Paragraph(n, s["sig_lbl"]),
-         Paragraph(r, s["sig_sub"]),
-         Paragraph(f, s["sig_sub"]),
-         Spacer(1, 0.6*cm),
-         Paragraph("Signature : _______________", s["sig_sub"])]
-        for n, r, f in signataires
-    ]]
+
     col_w = (W - 4*cm) / 3
-    t = Table(cells[0], colWidths=[col_w]*3)
+    data = [
+        [Paragraph(n, s["sig_lbl"]) for n, r, f in signataires],
+        [Paragraph(r, s["sig_sub"]) for n, r, f in signataires],
+        [Paragraph(f, s["sig_sub"]) for n, r, f in signataires],
+        [Paragraph("Signature :", s["sig_sub"]) for _ in signataires],
+        [Paragraph("_______________________", s["sig_sub"]) for _ in signataires],
+    ]
+    t = Table(data, colWidths=[col_w]*3)
     t.setStyle(TableStyle([
         ("ALIGN",         (0,0), (-1,-1), "CENTER"),
         ("VALIGN",        (0,0), (-1,-1), "TOP"),
         ("LINEAFTER",     (0,0), (1,-1),  0.5, GRIS_M),
-        ("TOPPADDING",    (0,0), (-1,-1), 4),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+        ("TOPPADDING",    (0,0), (-1,-1), 2),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+        ("TOPPADDING",    (0,3), (-1,3),  10),  # espace avant la ligne de signature
     ]))
     story.append(t)
 
@@ -410,7 +456,7 @@ def _signatures(story, s, ctx):
 # ── ENTRY POINT ───────────────────────────────────────────────────────────────
 def generate_codir_pdf(result: dict) -> bytes:
     """
-    Génère la fiche CODIR PDF depuis le résultat de run_agent_antoine().
+    Génère la fiche CODIR PDF (1 page) depuis le résultat de run_agent_antoine().
 
     Args:
         result (dict) : {
@@ -457,8 +503,8 @@ def generate_codir_pdf(result: dict) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
-        leftMargin=2*cm, rightMargin=2*cm,
-        topMargin=1.8*cm, bottomMargin=1.4*cm,
+        leftMargin=1.5*cm, rightMargin=1.5*cm,
+        topMargin=1.4*cm, bottomMargin=1.0*cm,
         title=f"Fiche CODIR — {eq}",
         author="ResilientFlow AI",
     )
