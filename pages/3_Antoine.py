@@ -9,6 +9,19 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from shared_state import init_session_state, update_sensors, COMMON_CSS
 import notion_client as nc
 
+
+def _fmt_fr(v, decimals: int = 0) -> str:
+    """Formate un nombre avec points comme séparateurs de milliers (ex: 2.905),
+    utilisée dans tous les onglets pour un affichage cohérent des chiffres."""
+    if v is None:
+        return "—"
+    try:
+        s = f"{v:,.{decimals}f}"
+    except (TypeError, ValueError):
+        return str(v)
+    return s.replace(",", ".")
+
+
 # ── CONFIG PAGE ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Antoine — Indicateurs Stratégiques", page_icon="📊", layout="wide")
 st.markdown(COMMON_CSS, unsafe_allow_html=True)
@@ -79,14 +92,6 @@ with tab0:
     except Exception as e:
         kpis = {}
         st.warning(f"⚠️ Impossible de charger les KPIs depuis Notion : {e}")
-
-    def _fmt_fr(v, decimals: int = 0) -> str:
-        """Formate un nombre avec points comme séparateurs de milliers (ex: 2.905)."""
-        try:
-            s = f"{v:,.{decimals}f}"
-        except (TypeError, ValueError):
-            return str(v)
-        return s.replace(",", ".")
 
     def _kpi_card(col, label: str, value: str, border_color: str, bg_color: str):
         col.markdown(
@@ -273,7 +278,7 @@ with tab2:
             hk1.metric("MTBF", f"{_mtbf} j" if _mtbf else "87 j",    help="Mean Time Between Failures")
             hk2.metric("MTTR", f"{_mttr} h" if _mttr else "4.5 h",   help="Mean Time To Repair")
             hk3.metric("ROI Prescriptif", f"× {_roi}" if _roi else "× 3.2")
-            hk4.metric("OPEX cumulé", f"{hist.get('cout_total_maintenance_eur', 0):,.0f} €")
+            hk4.metric("OPEX cumulé", f"{_fmt_fr(hist.get('cout_total_maintenance_eur', 0))} €")
 
         # ── Tableau des scénarios (result['scenarios']) ───────────────────────
         sc = result.get("scenarios")
@@ -285,6 +290,14 @@ with tab2:
             a = sc_data.get("A_correctif_pur", {})
             b = sc_data.get("B_maintien_prescriptif", {})
             c = sc_data.get("C_remplacement", {})
+
+            # Point mort : garde explicite contre None (la clé existe mais peut
+            # valoir None si l'économie annuelle n'est pas positive) — un simple
+            # .get(clé, "—") ne déclenche pas le repli sur une valeur présente
+            # mais nulle. Arrondi à 1 décimale pour éviter l'affichage brut
+            # type "1.500000".
+            payback_val = c.get("payback_vs_correctif_mois")
+            payback_display = _fmt_fr(payback_val, 1) if isinstance(payback_val, (int, float)) else "—"
 
             df_scenarios = pd.DataFrame([
                 {
@@ -306,14 +319,14 @@ with tab2:
                     "Description":  c.get("description", "—"),
                     "Coût total (€)": c.get("cout_total_eur", 0),
                     "NPV (€)":      c.get("npv_eur", 0),
-                    "Point mort (mois)": c.get("payback_vs_correctif_mois", "—"),
+                    "Point mort (mois)": payback_display,
                 },
             ])
 
             st.dataframe(
                 df_scenarios.style.format({
-                    "Coût total (€)": "{:,.0f}",
-                    "NPV (€)":        "{:,.0f}",
+                    "Coût total (€)": lambda x: _fmt_fr(x),
+                    "NPV (€)":        lambda x: _fmt_fr(x),
                 }),
                 use_container_width=True,
                 hide_index=True,
@@ -321,7 +334,7 @@ with tab2:
 
             reco = sc.get("recommandation_financiere", "")
             eco  = sc.get("economie_prescriptif_vs_correctif_eur", 0)
-            st.success(f"✅ **Recommandation agent :** {reco} — Économie vs correctif : **{eco:,.0f} €**")
+            st.success(f"✅ **Recommandation agent :** {reco} — Économie vs correctif : **{_fmt_fr(eco)} €**")
 
         # ── Analyse complète du LLM (result['analyse']) en markdown ──────────
         analyse = result.get("analyse", "")
