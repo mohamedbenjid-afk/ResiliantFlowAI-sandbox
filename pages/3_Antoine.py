@@ -80,11 +80,37 @@ with tab0:
         kpis = {}
         st.warning(f"⚠️ Impossible de charger les KPIs depuis Notion : {e}")
 
+    def _fmt_fr(v, decimals: int = 0) -> str:
+        """Formate un nombre avec points comme séparateurs de milliers (ex: 2.905)."""
+        try:
+            s = f"{v:,.{decimals}f}"
+        except (TypeError, ValueError):
+            return str(v)
+        return s.replace(",", ".")
+
+    def _kpi_card(col, label: str, value: str, border_color: str, bg_color: str):
+        col.markdown(
+            f'''<div style="background:{bg_color};border-left:4px solid {border_color};
+            border-radius:8px;padding:12px 14px;min-height:78px;">
+            <div style="font-size:0.78rem;color:#4b5563;margin-bottom:4px;">{label}</div>
+            <div style="font-size:1.5rem;font-weight:700;color:#111827;">{value}</div>
+            </div>''',
+            unsafe_allow_html=True
+        )
+
     k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Interventions totales", kpis.get("nb_interventions", "—"))
-    k2.metric("Dont prescriptives", kpis.get("nb_prescriptives", "—"))
-    k3.metric("Coût interventions", f"{kpis.get('cout_interventions', 0):,.0f} €")
-    k4.metric("Coûts évités (prescriptif)", f"{kpis.get('couts_evites', 0):,.0f} €")
+    _kpi_card(k1, "Interventions totales",
+              _fmt_fr(kpis.get("nb_interventions", 0)),
+              border_color="#dc2626", bg_color="#fee2e2")          # rouge
+    _kpi_card(k2, "Dont prescriptives",
+              _fmt_fr(kpis.get("nb_prescriptives", 0)),
+              border_color="#16a34a", bg_color="#dcfce7")          # vert
+    _kpi_card(k3, "Coût interventions",
+              f"{_fmt_fr(kpis.get('cout_interventions', 0))} €",
+              border_color="#2563eb", bg_color="#dbeafe")          # bleu
+    _kpi_card(k4, "Coûts évités (prescriptif)",
+              f"{_fmt_fr(kpis.get('couts_evites', 0))} €",
+              border_color="#b7410e", bg_color="#fbe4d8")          # orange brique
     _roi = kpis.get("roi")
     k5.metric("ROI Couche Prescriptive", f"× {_roi}" if _roi is not None else "—")
 
