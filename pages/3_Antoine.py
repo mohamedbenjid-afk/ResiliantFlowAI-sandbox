@@ -112,7 +112,9 @@ with tab0:
               f"{_fmt_fr(kpis.get('couts_evites', 0))} €",
               border_color="#b7410e", bg_color="#fbe4d8")          # orange brique
     _roi = kpis.get("roi")
-    k5.metric("ROI Couche Prescriptive", f"× {_roi}" if _roi is not None else "—")
+    _roi_val = f"× {_fmt_fr(_roi, 1)}" if _roi is not None else "—"
+    _kpi_card(k5, "ROI Couche Prescriptive", _roi_val,
+              border_color="#eab308", bg_color="#fef9c3")          # jaune
 
     nb_alerte = kpis.get("machines_alerte")
     if nb_alerte:
