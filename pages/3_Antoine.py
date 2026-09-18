@@ -37,6 +37,28 @@ def _kpi_card(col, label: str, value: str, border_color: str, bg_color: str, hel
     )
 
 
+def _risk_card(col, machine: str, rul: str, score, niveau: str, unite: str):
+    """Carte portfolio colorée selon le niveau de risque (onglet A1)."""
+    if "CRITIQUE" in niveau:
+        border, bg, icon = "#dc2626", "#fee2e2", "🔴"
+    elif "ÉLEVÉ" in niveau:
+        border, bg, icon = "#ea580c", "#ffedd5", "🟠"
+    elif "MODÉRÉ" in niveau:
+        border, bg, icon = "#eab308", "#fef9c3", "🟡"
+    else:
+        border, bg, icon = "#16a34a", "#dcfce7", "🟢"
+    col.markdown(
+        f'''<div style="background:{bg};border-left:4px solid {border};
+        border-radius:8px;padding:12px 14px;min-height:118px;">
+        <div style="font-size:0.78rem;color:#4b5563;font-weight:600;margin-bottom:4px;">{machine}</div>
+        <div style="font-size:1.4rem;font-weight:700;color:#111827;">RUL : {rul} j</div>
+        <div style="font-size:0.82rem;color:#374151;margin-top:2px;">↑ Score risque : {score}/100</div>
+        <div style="font-size:0.8rem;color:#4b5563;margin-top:8px;">{icon} {niveau} | {unite}</div>
+        </div>''',
+        unsafe_allow_html=True
+    )
+
+
 # ── CONFIG PAGE ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Antoine — Indicateurs Stratégiques", page_icon="📊", layout="wide")
 st.markdown(COMMON_CSS, unsafe_allow_html=True)
@@ -185,18 +207,8 @@ with tab1:
         )
         cols_rank = st.columns(min(4, len(portfolio["ranking"])))
         for i, m in enumerate(portfolio["ranking"][:4]):
-            with cols_rank[i]:
-                niveau = m["niveau_risque"]
-                color  = ("🔴" if "CRITIQUE" in niveau else
-                          "🟠" if "ÉLEVÉ"    in niveau else
-                          "🟡" if "MODÉRÉ"   in niveau else "🟢")
-                st.metric(
-                    label=m["machine"],
-                    value=f"RUL : {m['rul_jours']} j",
-                    delta=f"Score risque : {m['score_risque']}/100",
-                    delta_color="inverse" if m["score_risque"] > 50 else "normal"
-                )
-                st.caption(f"{color} {niveau} | {m['unite']}")
+            _risk_card(cols_rank[i], m["machine"], m["rul_jours"], m["score_risque"],
+                       m["niveau_risque"], m["unite"])
     else:
         st.info(
             "Lancez l'analyse stratégique (onglet 💰 Simulation Financière) pour afficher "
