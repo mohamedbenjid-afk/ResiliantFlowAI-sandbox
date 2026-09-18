@@ -303,6 +303,7 @@ def get_historique(machine_id: str = None, statut: str = None, limit: int = 20) 
     pages = _query_db(DB_IDS["historique"], f,
                       sorts=[{"property": "Date planifiée", "direction": "descending"}])
     return [{
+        "id":                p["id"],
         "titre":             _prop(p, "Intervention"),        # titre
         "machine":           _prop(p, "Équipement"),
         "type":              _prop(p, "Type d'intervention"),
@@ -501,6 +502,23 @@ def create_intervention(data: dict) -> dict:
     resp.raise_for_status()
     return resp.json()
 
+
+
+def set_statut_intervention(page_id: str, statut: str, note: str = None) -> dict:
+    """Met à jour le Statut d'une intervention existante (Plan de Maintenance).
+    Optionnellement, ajoute une note dans le champ Résultat. Invalide le cache
+    get_historique pour que les autres pages voient le changement au refresh."""
+    props = {"Statut": {"select": {"name": statut}}}
+    if note:
+        props["Résultat"] = {"rich_text": [{"text": {"content": note}}]}
+    resp = requests.patch(f"{NOTION_BASE_URL}/pages/{page_id}",
+                          headers=_headers(), json={"properties": props}, timeout=10)
+    resp.raise_for_status()
+    try:
+        get_historique.clear()
+    except Exception:
+        pass
+    return resp.json()
 
 # ── CRÉER UNE DÉCISION SOPHIE (POST) ──────────────────────────────────────────
 

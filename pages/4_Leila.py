@@ -5,6 +5,7 @@ from datetime import datetime, date
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from shared_state import init_session_state, update_sensors, COMMON_CSS
+import handoff_ui
 
 # ── CONFIG PAGE ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Leila — Conformité HSE", page_icon="🛡️", layout="wide")
@@ -42,6 +43,8 @@ st.markdown("### 🛡️ Conformité Réglementaire, Sécurité & Audit HSE — 
 st.markdown("*Intégration native de la sécurité au cœur des interventions critiques et génération automatique de preuves d'audits.*")
 
 # ── ONGLETS ───────────────────────────────────────────────────────────────────
+handoff_ui.popup_leila_validation()
+
 tab0, tab1, tab2, tab3 = st.tabs([
     "🛡️ L0 — Alerte HSE & EPI",
     "📋 L1 — Conformité Hebdo",

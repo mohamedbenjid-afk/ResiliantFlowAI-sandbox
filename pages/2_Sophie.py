@@ -10,6 +10,7 @@ import streamlit as st
 
 import notion_client as nc
 from shared_state import COMMON_CSS, init_session_state, update_sensors
+import handoff_ui
 
 
 def _fmt_eur(v):
@@ -71,6 +72,7 @@ STATUS_BORDER = {"Nominal": "#86efac", "Alerte": "#fde047", "Critique": "#ef4444
 # TAB 0 — S0 ALERTES ACTIVES
 # ════════════════════════════════════════════════════════════════════════════════
 with tab0:
+    handoff_ui.banniere_sophie_cloture()
     st.markdown("## 📡 Machines en alerte — classées par urgence décroissante")
 
     try:
@@ -513,6 +515,16 @@ with tab2:
                     with st.spinner(f"Affectation de {nom_complet}…"):
                         nc.create_intervention(payload)
                     st.success(f"✅ {nom_complet} affecté à l'intervention {equipement_cible} !")
+                    if "lionel" in nom_complet.lower():
+                        try:
+                            from notify import envoyer_affectation_lionel
+                            _mail = envoyer_affectation_lionel(nom_complet, equipement_cible, type_intervention, today, c_rul)
+                            if _mail.get("ok"):
+                                st.caption(f"📧 Email d'affectation envoyé à {nom_complet}.")
+                            elif _mail.get("skipped"):
+                                st.caption("📧 Email non envoyé (secrets Gmail non configurés).")
+                        except Exception:
+                            pass
                     if manquantes:
                         st.warning(f"⚠️ Habilitation(s) manquante(s) — non bloquant : {', '.join(manquantes)}")
                 except Exception as e:

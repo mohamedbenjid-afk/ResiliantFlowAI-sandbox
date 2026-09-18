@@ -146,6 +146,53 @@ def get_manager_email() -> tuple[str, str]:
     return ("", "")
 
 
+def envoyer_affectation_lionel(nom_technicien: str, machine_label: str,
+                               type_interv: str, date_str: str, rul_jours) -> dict:
+    """Notifie par email le technicien que Sophie vient d'affecter à une intervention."""
+    email = ""
+    try:
+        for p in nc._query_db(nc.DB_IDS["equipe"]):
+            complet = f"{nc._prop(p, 'Prénom') or ''} {nc._prop(p, 'Nom Technicien') or ''}".strip().lower()
+            if nom_technicien.split()[0].lower() in complet:
+                email = _read_email(p)
+                if email:
+                    break
+    except Exception:
+        pass
+    if not email:
+        return {"ok": False, "skipped": True,
+                "error": f"Aucun email trouvé pour « {nom_technicien} »"}
+
+    prenom = nom_technicien.split()[0]
+    horodatage = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    machine2 = "Pompe P-17" if machine_label == "P-17" else machine_label
+    subject = f"🔧 Nouvelle intervention assignée — {machine2} ({type_interv})"
+
+    text_body = (
+        f"NOUVELLE INTERVENTION — ResilientFlow AI\n{'='*48}\n\n"
+        f"Bonjour {prenom},\n\n"
+        f"Sophie (manager maintenance) vient de t'affecter une intervention.\n\n"
+        f"Machine    : {machine2}\n"
+        f"Type       : {type_interv}\n"
+        f"Date       : {date_str}\n"
+        f"RUL estimé : {rul_jours} j\n"
+        f"Affecté le : {horodatage}\n\n"
+        f"Statut : en attente de validation HSE (Leila) avant démarrage.\n"
+        f"Ouvre l'app ResilientFlow AI (onglet « Ma journée ») pour le détail.\n\n"
+        f"{'-'*48}\nEmail automatique — ne pas répondre."
+    )
+    html_body = (
+        f"<div style='font-family:Arial,sans-serif;max-width:640px;'>"
+        f"<div style='background:#0f4c81;color:#fff;padding:14px 18px;border-radius:6px;'>"
+        f"<b>🔧 Nouvelle intervention — {machine2}</b><br>"
+        f"<span style='font-size:0.9rem;'>Type : {type_interv} — Date : {date_str}</span></div>"
+        f"<p style='color:#374151;'>Bonjour <b>{prenom}</b>, Sophie t'a affecté cette intervention "
+        f"(RUL {rul_jours} j). Statut : <b>en attente de validation HSE</b> avant démarrage.</p>"
+        f"<p style='color:#94a3b8;font-size:0.8rem;'>Email automatique ResilientFlow AI — ne pas répondre.</p></div>"
+    )
+    return _send_email(email, subject, text_body, html_body)
+
+
 def envoyer_bon_de_travail(machine_label: str, anomalie: str, statut: str,
                            rul_jours, recap_text: str) -> dict:
     """Envoie le bon de travail au manager (Sophie). Retourne {ok, to, ref, ...}."""

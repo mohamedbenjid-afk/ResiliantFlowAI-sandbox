@@ -12,6 +12,7 @@ import notion_client as nc
 from agents.agent_lionel import run_agent_lionel, resumer_journee_lionel
 from shared_state import COMMON_CSS, init_session_state, update_sensors, RUL_NOMINAL
 from p17_context import P17_CONTEXT
+import handoff_ui
 
 # Lot D — rafraîchissement K0 via fragment si la version de Streamlit le permet
 _HAS_FRAGMENT = hasattr(st, "fragment")
@@ -121,6 +122,7 @@ _labels += ["✅ K3 — Post-intervention", "⚖️ K4 — Arbitrage"]
 
 _tabs = st.tabs(_labels)
 tab_jour = _tabs[0]
+handoff_ui.popup_lionel()
 tab_dash = _tabs[1]
 tab0 = _tabs[2]
 tab1 = _tabs[3]
@@ -213,6 +215,7 @@ def _hab_ok(interv, mes_hab):
 with tab_jour:
     st.subheader("☀️ Ma journée — Lionel · " + datetime.date.today().strftime("%d/%m/%Y"))
     st.caption("Ton poste de travail : ta charge du jour, tes interventions, la consigne de l'agent, ton compte-rendu.")
+    handoff_ui.carte_etat_hse_lionel()
 
     if "mes_interventions" not in st.session_state:
         st.session_state["mes_interventions"] = _charger_mes_interventions()
