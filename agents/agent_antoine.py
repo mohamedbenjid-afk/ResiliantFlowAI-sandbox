@@ -570,6 +570,7 @@ def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None) -> dict
       portfolio  : ranking machines (pour PDF CODIR)
       bilan      : bilan équipement
       historique : KPIs MTBF/MTTR/ROI
+      stock      : valeur stock immobilisé, ruptures, délais (get_etat_stock_strategique)
     """
     # ── 1. Pré-fetch toutes les données directement ───────────────────────────
     raw_portfolio  = get_top_equipements_a_risque()
@@ -653,6 +654,7 @@ Recommandation financière : {reco}
         "portfolio":  raw_portfolio,
         "bilan":      raw_bilan,
         "historique": raw_historique,
+        "stock":      raw_stock,
     }
 
 
