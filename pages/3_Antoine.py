@@ -22,6 +22,21 @@ def _fmt_fr(v, decimals: int = 0) -> str:
     return s.replace(",", ".")
 
 
+def _kpi_card(col, label: str, value: str, border_color: str, bg_color: str, help_text: str = ""):
+    """Carte KPI colorée réutilisable (onglets A0 et A2). help_text optionnel
+    affiché comme info-bulle native du navigateur (survol), pour ne pas perdre
+    l'équivalent du paramètre help= de st.metric()."""
+    title_attr = f' title="{help_text}"' if help_text else ""
+    col.markdown(
+        f'''<div{title_attr} style="background:{bg_color};border-left:4px solid {border_color};
+        border-radius:8px;padding:12px 14px;min-height:78px;">
+        <div style="font-size:0.78rem;color:#4b5563;margin-bottom:4px;">{label}</div>
+        <div style="font-size:1.5rem;font-weight:700;color:#111827;">{value}</div>
+        </div>''',
+        unsafe_allow_html=True
+    )
+
+
 # ── CONFIG PAGE ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Antoine — Indicateurs Stratégiques", page_icon="📊", layout="wide")
 st.markdown(COMMON_CSS, unsafe_allow_html=True)
@@ -92,16 +107,6 @@ with tab0:
     except Exception as e:
         kpis = {}
         st.warning(f"⚠️ Impossible de charger les KPIs depuis Notion : {e}")
-
-    def _kpi_card(col, label: str, value: str, border_color: str, bg_color: str):
-        col.markdown(
-            f'''<div style="background:{bg_color};border-left:4px solid {border_color};
-            border-radius:8px;padding:12px 14px;min-height:78px;">
-            <div style="font-size:0.78rem;color:#4b5563;margin-bottom:4px;">{label}</div>
-            <div style="font-size:1.5rem;font-weight:700;color:#111827;">{value}</div>
-            </div>''',
-            unsafe_allow_html=True
-        )
 
     k1, k2, k3, k4, k5 = st.columns(5)
     _kpi_card(k1, "Interventions totales",
@@ -275,10 +280,16 @@ with tab2:
             st.markdown("##### 📈 KPIs de fiabilité calculés depuis l'historique")
             hk1, hk2, hk3, hk4 = st.columns(4)
             _mtbf = hist.get('mtbf_jours'); _mttr = hist.get('mttr_heures'); _roi = hist.get('roi_maintenance')
-            hk1.metric("MTBF", f"{_mtbf} j" if _mtbf else "87 j",    help="Mean Time Between Failures")
-            hk2.metric("MTTR", f"{_mttr} h" if _mttr else "4.5 h",   help="Mean Time To Repair")
-            hk3.metric("ROI Prescriptif", f"× {_roi}" if _roi else "× 3.2")
-            hk4.metric("OPEX cumulé", f"{_fmt_fr(hist.get('cout_total_maintenance_eur', 0))} €")
+            _kpi_card(hk1, "MTBF", f"{_fmt_fr(_mtbf, 1)} j" if _mtbf else "87 j",
+                      border_color="#eab308", bg_color="#fef9c3",          # jaune
+                      help_text="Mean Time Between Failures")
+            _kpi_card(hk2, "MTTR", f"{_fmt_fr(_mttr, 1)} h" if _mttr else "4.5 h",
+                      border_color="#ea580c", bg_color="#ffedd5",          # orange
+                      help_text="Mean Time To Repair")
+            _kpi_card(hk3, "ROI Prescriptif", f"× {_fmt_fr(_roi, 1)}" if _roi else "× 3.2",
+                      border_color="#7c3aed", bg_color="#ede9fe")          # violet
+            _kpi_card(hk4, "OPEX cumulé", f"{_fmt_fr(hist.get('cout_total_maintenance_eur', 0))} €",
+                      border_color="#16a34a", bg_color="#dcfce7")          # vert
 
         # ── Tableau des scénarios (result['scenarios']) ───────────────────────
         sc = result.get("scenarios")
