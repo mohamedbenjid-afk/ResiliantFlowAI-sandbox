@@ -303,6 +303,34 @@ with tab2:
             _kpi_card(hk4, "OPEX cumulé", f"{_fmt_fr(hist.get('cout_total_maintenance_eur', 0))} €",
                       border_color="#16a34a", bg_color="#dcfce7")          # vert
 
+        # ── Stock de pièces détachées (result['stock']) ───────────────────────
+        stock = result.get("stock")
+        if stock:
+            st.markdown("##### 📦 Stock de pièces détachées")
+            sk1, sk2, sk3, sk4 = st.columns(4)
+            nb_rupture = len(stock.get("pieces_en_rupture", []))
+            nb_alerte_stock = len(stock.get("pieces_alerte", []))
+            _kpi_card(sk1, "Valeur stock immobilisé",
+                      f"{_fmt_fr(stock.get('valeur_stock_immobilisee_eur', 0))} €",
+                      border_color="#2563eb", bg_color="#dbeafe")          # bleu
+            _kpi_card(sk2, "Références en stock",
+                      _fmt_fr(stock.get("nb_references", 0)),
+                      border_color="#6b7280", bg_color="#f3f4f6")          # gris neutre
+            _kpi_card(sk3, "Pièces en rupture",
+                      _fmt_fr(nb_rupture),
+                      border_color="#dc2626" if nb_rupture else "#16a34a",
+                      bg_color="#fee2e2" if nb_rupture else "#dcfce7")     # rouge si rupture, vert sinon
+            _kpi_card(sk4, "Pièces en alerte stock",
+                      _fmt_fr(nb_alerte_stock),
+                      border_color="#ea580c" if nb_alerte_stock else "#16a34a",
+                      bg_color="#ffedd5" if nb_alerte_stock else "#dcfce7")  # orange si alerte, vert sinon
+
+            if nb_rupture:
+                noms_rupture = ", ".join(
+                    p.get("designation", "—") for p in stock.get("pieces_en_rupture", [])
+                )
+                st.caption(f"🔴 En rupture : {noms_rupture}")
+
         # ── Tableau des scénarios (result['scenarios']) ───────────────────────
         sc = result.get("scenarios")
         if sc and sc.get("scenarios"):
