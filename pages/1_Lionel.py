@@ -123,6 +123,7 @@ _labels += ["✅ K3 — Post-intervention", "⚖️ K4 — Arbitrage"]
 _tabs = st.tabs(_labels)
 tab_jour = _tabs[0]
 handoff_ui.popup_lionel()
+handoff_ui.popup_lionel_hse_ok()
 tab_dash = _tabs[1]
 tab0 = _tabs[2]
 tab1 = _tabs[3]

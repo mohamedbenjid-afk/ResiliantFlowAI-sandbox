@@ -52,6 +52,29 @@ def popup_lionel(nom_technicien="Lionel"):
     _dlg()
 
 
+def popup_lionel_hse_ok(nom_technicien="Lionel"):
+    """2e pop-up chez Lionel : Leila a valide (statut En cours) -> feu vert HSE."""
+    if not _HAS_DIALOG:
+        return
+    vues = st.session_state.setdefault("_lionel_hse_ok_vues", set())
+    ok = [i for i in _interventions(statut="En cours")
+          if nom_technicien.lower() in str(i.get("technicien", "")).lower()
+          and i.get("id") and i["id"] not in vues]
+    if not ok:
+        return
+    interv = ok[0]
+
+    @st.dialog("Feu vert HSE - tu peux demarrer")
+    def _dlg():
+        st.success("Leila (HSE) a autorise l'intervention " + str(interv.get("machine", "P-17")) + ".")
+        st.markdown("Les consignes sont poussees sur tes lunettes G2. Tu peux demarrer l'intervention.")
+        if st.button("Demarrer l'intervention", use_container_width=True, type="primary"):
+            vues.add(interv["id"])
+            st.rerun()
+
+    _dlg()
+
+
 def carte_etat_hse_lionel(nom_technicien="Lionel"):
     """Etat HSE de l'intervention de Lionel + cloture une fois autorisee."""
     mine = [i for i in (_interventions(statut="Planifiée") + _interventions(statut="En cours"))
