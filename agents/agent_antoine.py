@@ -108,6 +108,19 @@ def _num(prop) -> float:
 
 def _p(page): return page.get("properties", {})
 
+def _fmt(v, decimals: int = 0) -> str:
+    """Formate un nombre avec points comme séparateurs de milliers (ex: 2.082.545),
+    jamais de virgule. Utilisée partout où un montant est injecté dans le contexte
+    envoyé au LLM, pour que l'agent reprenne ce format dans son texte généré au
+    lieu du séparateur virgule par défaut de Python (f"{v:,.0f}")."""
+    if v is None:
+        return "—"
+    try:
+        s = f"{v:,.{decimals}f}"
+    except (TypeError, ValueError):
+        return str(v)
+    return s.replace(",", ".")
+
 
 # ── OUTIL 1 : bilan équipement — PRIORITÉ 2 ──────────────────────────────────
 def get_bilan_equipement(nom: str) -> dict:
@@ -449,7 +462,7 @@ def simuler_scenarios_investissement(
                 "npv_eur":                 round(npv_b, 0),
             },
             "C_remplacement": {
-                "description":             f"Remplacement immédiat — CAPEX {cout_remplacement_eur:,.0f} €",
+                "description":             f"Remplacement immédiat — CAPEX {_fmt(cout_remplacement_eur)} €",
                 "cashflows_annuels_eur":   [round(c, 0) for c in cf_c],
                 "cout_total_eur":          round(cout_total_c, 0),
                 "npv_eur":                 round(npv_c, 0),
@@ -533,6 +546,13 @@ Format de réponse strict (Markdown) :
 6. **Recommandation CODIR** — une seule décision chiffrée, clairement formulée
 
 Sois synthétique et chiffré. Antoine parle au CODIR. Jamais plus de 3 niveaux de bullet.
+
+Format des nombres : utilise TOUJOURS un point comme séparateur de milliers
+(ex: 2.082.545 €, jamais 2,082,545 € ni 2,082.545 €). Pour les durées en mois
+ou jours avec décimale, une seule décimale sans zéro superflu et un point
+comme séparateur décimal, jamais de virgule (ex: 1.5 mois, jamais 1,5 mois
+ni 1.50 mois). Reprends fidèlement le format déjà utilisé dans les données
+ci-dessous plutôt que de reformater les chiffres à ta façon.
 """
 
 
@@ -580,6 +600,11 @@ def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None) -> dict
     )
 
     hist = raw_historique
+    # Point mort : peut valoir None (économie annuelle non positive) — _fmt()
+    # gère déjà ce cas (retourne "—"), donc plus de risque d'afficher "None mois"
+    # comme c'était le cas avant (même bug que celui déjà corrigé dans le PDF CODIR).
+    payback_str = f"{_fmt(payback, 1)} mois" if payback is not None else "non calculable"
+
     contexte = f"""
 DONNÉES D'ANALYSE — {equipement}{rul_info}
 
@@ -594,25 +619,25 @@ DONNÉES D'ANALYSE — {equipement}{rul_info}
 ## HISTORIQUE MAINTENANCE
 - {hist.get('nb_interventions', 0)} interventions dont {hist.get('nb_pannes_correctives', 0)} pannes correctives
 - MTBF : {hist.get('mtbf_jours', '—')} j | MTTR : {hist.get('mttr_heures', '—')} h
-- OPEX cumulé : {hist.get('cout_total_maintenance_eur', 0):,.0f} €
-- Arrêts évités par prescriptif : {hist.get('couts_arrets_evites_eur', 0):,.0f} €
+- OPEX cumulé : {_fmt(hist.get('cout_total_maintenance_eur', 0))} €
+- Arrêts évités par prescriptif : {_fmt(hist.get('couts_arrets_evites_eur', 0))} €
 - ROI prescriptif : × {hist.get('roi_maintenance', '—')}
 
 ## EXPOSITION FINANCIÈRE PRODUCTION
-- Exposition si panne non planifiée : {raw_exposition.get('exposition_financiere_totale_eur', 0):,.0f} €
+- Exposition si panne non planifiée : {_fmt(raw_exposition.get('exposition_financiere_totale_eur', 0))} €
 - Ordres de fabrication impactés : {raw_exposition.get('nb_of_impactes', 0)}
 
 ## STOCK PIÈCES DÉTACHÉES
-- Valeur immobilisée : {raw_stock.get('valeur_stock_immobilisee_eur', 0):,.0f} €
+- Valeur immobilisée : {_fmt(raw_stock.get('valeur_stock_immobilisee_eur', 0))} €
 - Pièces en rupture : {len(raw_stock.get('pieces_en_rupture', []))} | En alerte : {len(raw_stock.get('pieces_alerte', []))}
 
 ## SIMULATION 3 SCÉNARIOS (horizon {raw_scenarios.get('horizon_ans', 3)} ans)
 | Scénario | Coût total | NPV |
 |---|---|---|
-| A — Correctif pur | {a_cout:,.0f} € | {a_npv:,.0f} € |
-| B — Maintien prescriptif | {b_cout:,.0f} € | {b_npv:,.0f} € |
-| C — Remplacement ({raw_scenarios.get('hypotheses', {}).get('cout_remplacement_eur', 85000):,.0f} €) | {c_cout:,.0f} € | {c_npv:,.0f} € |
-Point mort C vs A : {payback} mois | Économie B vs A : {eco:,.0f} €
+| A — Correctif pur | {_fmt(a_cout)} € | {_fmt(a_npv)} € |
+| B — Maintien prescriptif | {_fmt(b_cout)} € | {_fmt(b_npv)} € |
+| C — Remplacement ({_fmt(raw_scenarios.get('hypotheses', {}).get('cout_remplacement_eur', 85000))} €) | {_fmt(c_cout)} € | {_fmt(c_npv)} € |
+Point mort C vs A : {payback_str} | Économie B vs A : {_fmt(eco)} €
 Recommandation financière : {reco}
 """
 
