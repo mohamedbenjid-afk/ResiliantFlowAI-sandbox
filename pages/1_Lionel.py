@@ -244,6 +244,51 @@ def _pieces_options_pour(interv):
     return out
 
 
+def _cr_fallback_local(interv, pieces, duree, resultat):
+    lignes = ["Intervention " + str(interv.get("titre", "")) + " sur "
+              + str(interv.get("machine", "P-17")) + " realisee."]
+    if pieces:
+        lignes.append("Pieces remplacees : " + ", ".join(pieces) + ".")
+    lignes.append("Duree reelle : " + str(duree) + " h. Resultat : " + str(resultat) + ".")
+    lignes.append("Controles apres remise en service effectues (temperature, vibration, "
+                  "pression) ; machine reintegree en production.")
+    return " ".join(lignes)
+
+
+def _rediger_cr_ia(interv, consigne, pieces, duree, resultat, controle_ok):
+    """Brouillon d'observations pour le CR (LLM sans outils ; repli deterministe).
+    Defini dans la page pour ne pas dependre du cache du module handoff_ui."""
+    contexte = (
+        "Intervention : " + str(interv.get("titre", "")) + "\n"
+        "Machine : " + str(interv.get("machine", "P-17")) + "\n"
+        "Type : " + str(interv.get("type", "")) + " | Priorite : " + str(interv.get("priorite", "")) + "\n"
+        "Pieces reellement remplacees : " + (", ".join(pieces) if pieces else "aucune") + "\n"
+        "Duree reelle : " + str(duree) + " h\n"
+        "Resultat declare : " + str(resultat) + "\n"
+        "Controles apres remise en service OK : " + ("oui" if controle_ok else "non") + "\n"
+        "Consigne suivie (extrait) : " + (str(consigne)[:900] if consigne else "n/a")
+    )
+    system = (
+        "Tu es l'assistant du technicien de maintenance Lionel. Redige un compte-rendu "
+        "d'intervention terrain, factuel, professionnel et concis (4 a 6 phrases, en francais). "
+        "Structure : geste realise, pieces changees, controles apres remise en service, etat final "
+        "de la machine, et toute reserve. Pas de listes a puces, pas de titres, uniquement du texte "
+        "redige. N'invente aucune donnee : appuie-toi uniquement sur le contexte."
+    )
+    try:
+        from llm_client import chat as _chat
+        resp = _chat(system=system,
+                     messages=[{"role": "user", "content": contexte}],
+                     tools=None, max_tokens=400)
+        txt = (resp.final_text() or "").strip()
+        low = txt.lower()
+        if txt and len(txt) > 30 and "tool_call" not in low and txt[:1] not in "{[":
+            return txt
+    except Exception:
+        pass
+    return _cr_fallback_local(interv, pieces, duree, resultat)
+
+
 
 with tab_jour:
     st.subheader("☀️ Ma journée — Lionel · " + datetime.date.today().strftime("%d/%m/%Y"))
@@ -396,7 +441,7 @@ with tab_jour:
         _cia1, _cia2 = st.columns([1, 3])
         if _cia1.button("🤖 Rédiger avec l'IA", key="cr_ia_" + _iid, use_container_width=True):
             with st.spinner("🤖 L'agent rédige ton compte-rendu…"):
-                st.session_state[_obs_key] = handoff_ui.rediger_cr_ia(
+                st.session_state[_obs_key] = _rediger_cr_ia(
                     _act, _consigne, _q2, _q3, _q1, _q5)
         _cia2.caption("L'IA propose un brouillon d'observations ; tu peux le corriger avant d'enregistrer.")
         _q4 = st.text_area("Observations terrain", key=_obs_key)
