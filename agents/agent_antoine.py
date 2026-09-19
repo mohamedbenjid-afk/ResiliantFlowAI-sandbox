@@ -82,19 +82,11 @@ def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None)
     return results
 
 
-# ── IDs Notion — alignés sur les bases [SANDBOX] de notion_client (source unique)
-# (avant : IDs codés en dur pointant vers d'anciennes bases -> rapport déconnecté)
-from notion_client import DB_IDS as _DB_IDS
-DB_MACHINES   = _DB_IDS["machines"]      # 🏭 [SANDBOX] Équipements
-DB_ORDRES_FAB = _DB_IDS["ordres_fab"]    # 📋 [SANDBOX] Ordres de Fabrication
-DB_HISTORIQUE = _DB_IDS["historique"]    # 🔩 [SANDBOX] Plan de Maintenance
-DB_PIECES     = _DB_IDS["pieces"]        # 📦 [SANDBOX] Stock Composants
-
-
-def _is_doublon(nom) -> bool:
-    """Vrai pour une ligne machine marquee comme doublon a supprimer."""
-    n = (nom or "").lower()
-    return ("doublon" in n) or ("supprimer" in n) or ("🗑" in n)
+# ── IDs Notion — bases ESCP (schéma correct) — PRIORITÉ 1 ────────────────────
+DB_MACHINES   = "6653da63-bd5a-4191-815c-576b8c7fcfbc"   # machines / équipements
+DB_ORDRES_FAB = "687e40c2-a3ff-4de0-be55-20cf411f5dd6"   # ordres de fabrication
+DB_HISTORIQUE = "94babab5-03bb-4c4d-9053-08d5bff301e3"   # historique interventions
+DB_PIECES     = "ef896795-bd1a-4b20-a8ea-f121c9f846ff"   # pièces détachées
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -130,16 +122,53 @@ def _fmt(v, decimals: int = 0) -> str:
     return s.replace(",", ".")
 
 
+def _bloc_arbitrage(raw_arbitrage: dict) -> str:
+    """Construit la section ARBITRAGE BUDGÉTAIRE du contexte LLM, uniquement
+    si un budget a été renseigné (raw_arbitrage non None). Retourne une
+    chaîne vide sinon, pour ne pas polluer le contexte quand la fonctionnalité
+    n'est pas utilisée."""
+    if not raw_arbitrage:
+        return ""
+
+    retenues = raw_arbitrage.get("machines_retenues", [])
+    non_retenues = raw_arbitrage.get("machines_non_retenues", [])
+
+    lignes_retenues = "\n".join(
+        f"  - {m['machine']} ({m['unite']}) : CAPEX {_fmt(m['capex_complet_eur'])} €, "
+        f"gain annuel {_fmt(m['gain_annuel_eur'])} €/an, "
+        f"ratio {m['ratio_gain_par_euro']:.3f} €/€ investi"
+        for m in retenues
+    ) or "  Aucune machine retenue dans le budget disponible."
+
+    lignes_non_retenues = "\n".join(
+        f"  - {m['machine']} ({m['unite']}) : CAPEX {_fmt(m['capex_complet_eur'])} € — "
+        f"{m.get('raison_exclusion', 'non retenue')}"
+        for m in non_retenues
+    ) or "  Toutes les machines éligibles sont couvertes par le budget."
+
+    return f"""
+
+## ARBITRAGE BUDGÉTAIRE MULTI-MACHINES
+Budget disponible : {_fmt(raw_arbitrage.get('budget_disponible_eur', 0))} € | Budget utilisé : {_fmt(raw_arbitrage.get('budget_utilise_eur', 0))} € | Budget restant : {_fmt(raw_arbitrage.get('budget_restant_eur', 0))} €
+{raw_arbitrage.get('nb_machines_eligibles', 0)} machine(s) éligible(s) (Critique/Élevé), {raw_arbitrage.get('nb_machines_retenues', 0)} retenue(s) dans le budget.
+Gain annuel total si arbitrage suivi : {_fmt(raw_arbitrage.get('gain_annuel_total_eur', 0))} €/an
+
+Machines RETENUES (par ordre de priorité, meilleur ratio gain/investissement d'abord) :
+{lignes_retenues}
+
+Machines NON RETENUES (budget insuffisant) :
+{lignes_non_retenues}
+"""
+
+
 # ── OUTIL 1 : bilan équipement — PRIORITÉ 2 ──────────────────────────────────
 def get_bilan_equipement(nom: str) -> dict:
     """État de dégradation et données de fiabilité pour évaluer un remplacement CAPEX."""
     res = _notion_query(DB_MACHINES,
         filter_obj={"property": "Équipement", "title": {"contains": nom}})
-    res = [r for r in res if not _is_doublon(_text(_p(r).get("Équipement")))]
     if not res:
         return {"erreur": f"'{nom}' non trouvé dans la base machines"}
-    _exact = [r for r in res if _text(_p(r).get("Équipement")).strip() == nom.strip()]
-    p = _p(_exact[0] if _exact else res[0])
+    p = _p(res[0])
     rul_jours = round(_num(p.get("RUL nominal (h)")) / 24, 1)
     return {
         "machine":               _text(p.get("Équipement")),
@@ -331,8 +360,6 @@ def get_top_equipements_a_risque() -> dict:
         p       = _p(m)
         nom     = _text(p.get("Équipement"))
         statut  = _text(p.get("Statut"))
-        if _is_doublon(nom):
-            continue
 
         # Fix v5 : le fallback à 999 (= "aucun risque lié au RUL") ne doit
         # s'appliquer que si le champ RUL est réellement absent, pas si sa
@@ -571,6 +598,102 @@ def simuler_scenarios_investissement(
     }
 
 
+# ── OUTIL 7 : arbitrage budgétaire multi-machines ────────────────────────────
+def arbitrer_budget_remplacement(
+    budget_disponible_eur: float,
+    taux_actualisation: float = 0.05,
+    duree_vie_remplacement_ans: int = 12,
+    duree_installation_h: float = 8,
+    cout_formation_eur: float = 2000,
+    valeur_revente_eur: float = 5000,
+    cout_remplacement_defaut_eur: float = 85000,
+    niveaux_eligibles: tuple = ("CRITIQUE", "ÉLEVÉ"),
+) -> dict:
+    """
+    Arbitrage budgétaire sur tout le parc : avec un budget limité, quelles
+    machines à risque remplacer en priorité ?
+
+    Contexte (revue Antoine — point 4) : le portfolio identifie plusieurs
+    machines Critique/Élevé simultanément (ex: P-17 ET C-03), mais
+    simuler_scenarios_investissement() ne traite qu'un équipement à la fois.
+    Un directeur technique avec un budget limité doit arbitrer ENTRE
+    plusieurs machines, pas seulement décider oui/non pour une seule.
+
+    Méthode : pour chaque machine éligible (niveau de risque dans
+    niveaux_eligibles), on calcule le gain annuel du remplacement
+    (CAE correctif - CAE remplacement, avec le CAPEX complet incluant
+    installation/formation/revente) et son CAPEX complet. On priorise par
+    ratio gain_annuel / CAPEX (le plus rentable par euro investi d'abord),
+    puis on sélectionne gloutonnement les machines tant que le budget le
+    permet — approche standard de priorisation d'investissements sous
+    contrainte budgétaire (proche d'un knapsack simplifié).
+
+    Limite connue : le coût de remplacement par défaut est le même pour
+    toutes les machines (cout_remplacement_defaut_eur) car le schéma Notion
+    ESCP ne contient pas de prix de remplacement par équipement — à adapter
+    si cette donnée devient disponible.
+    """
+    portfolio = get_top_equipements_a_risque()
+    candidats_bruts = [
+        m for m in portfolio.get("ranking", [])
+        if any(niv in m.get("niveau_risque", "") for niv in niveaux_eligibles)
+    ]
+
+    evaluations = []
+    for m in candidats_bruts:
+        nom = m["machine"]
+        sim = simuler_scenarios_investissement(
+            equipement=nom,
+            cout_remplacement_eur=cout_remplacement_defaut_eur,
+            taux_actualisation=taux_actualisation,
+            duree_vie_remplacement_ans=duree_vie_remplacement_ans,
+            duree_installation_h=duree_installation_h,
+            cout_formation_eur=cout_formation_eur,
+            valeur_revente_eur=valeur_revente_eur,
+        )
+        sc  = sim.get("scenarios", {})
+        eac_a = sc.get("A_correctif_pur", {}).get("cout_annuel_equivalent_eur", 0)
+        eac_c = sc.get("C_remplacement", {}).get("cout_annuel_equivalent_eur", 0)
+        capex = sim.get("hypotheses", {}).get("capex_complet_eur", cout_remplacement_defaut_eur)
+        gain_annuel = eac_a - eac_c
+        ratio = round(gain_annuel / capex, 4) if capex > 0 else 0
+
+        evaluations.append({
+            "machine":            nom,
+            "unite":              m.get("unite", "—"),
+            "niveau_risque":      m.get("niveau_risque", "—"),
+            "score_risque":       m.get("score_risque", 0),
+            "capex_complet_eur":  round(capex, 0),
+            "gain_annuel_eur":    round(gain_annuel, 0),
+            "ratio_gain_par_euro": ratio,
+        })
+
+    # Priorisation : meilleur ratio gain/investissement d'abord
+    evaluations.sort(key=lambda x: x["ratio_gain_par_euro"], reverse=True)
+
+    retenues, non_retenues = [], []
+    budget_restant = budget_disponible_eur
+    for ev in evaluations:
+        if ev["capex_complet_eur"] <= budget_restant:
+            retenues.append(ev)
+            budget_restant -= ev["capex_complet_eur"]
+        else:
+            ev_copy = dict(ev)
+            ev_copy["raison_exclusion"] = "Budget restant insuffisant pour ce CAPEX"
+            non_retenues.append(ev_copy)
+
+    return {
+        "budget_disponible_eur":  round(budget_disponible_eur, 0),
+        "budget_utilise_eur":     round(budget_disponible_eur - budget_restant, 0),
+        "budget_restant_eur":     round(budget_restant, 0),
+        "gain_annuel_total_eur":  round(sum(r["gain_annuel_eur"] for r in retenues), 0),
+        "nb_machines_eligibles":  len(evaluations),
+        "nb_machines_retenues":   len(retenues),
+        "machines_retenues":      retenues,
+        "machines_non_retenues":  non_retenues,
+    }
+
+
 # ── DÉCLARATION DES OUTILS ────────────────────────────────────────────────────
 TOOLS = [
     {
@@ -616,6 +739,23 @@ TOOLS = [
             "required": ["equipement"]
         }
     },
+    {
+        "name": "arbitrer_budget_remplacement",
+        "description": "Avec un budget limité, priorise quelles machines Critique/Élevé remplacer en premier, en maximisant le gain annuel (CAE) par euro investi jusqu'à épuisement du budget. Pour l'arbitrage CODIR multi-équipements.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "budget_disponible_eur":       {"type": "number"},
+                "taux_actualisation":          {"type": "number"},
+                "duree_vie_remplacement_ans":  {"type": "integer"},
+                "duree_installation_h":        {"type": "number"},
+                "cout_formation_eur":          {"type": "number"},
+                "valeur_revente_eur":          {"type": "number"},
+                "cout_remplacement_defaut_eur":{"type": "number", "description": "Coût de remplacement par défaut appliqué à chaque machine évaluée"},
+            },
+            "required": ["budget_disponible_eur"]
+        }
+    },
 ]
 
 
@@ -636,6 +776,16 @@ def _execute(name, inputs):
             cout_formation_eur=inputs.get("cout_formation_eur", 2000),
             valeur_revente_eur=inputs.get("valeur_revente_eur", 5000),
         )
+    if name == "arbitrer_budget_remplacement":
+        return arbitrer_budget_remplacement(
+            budget_disponible_eur=inputs["budget_disponible_eur"],
+            taux_actualisation=inputs.get("taux_actualisation", 0.05),
+            duree_vie_remplacement_ans=inputs.get("duree_vie_remplacement_ans", 12),
+            duree_installation_h=inputs.get("duree_installation_h", 8),
+            cout_formation_eur=inputs.get("cout_formation_eur", 2000),
+            valeur_revente_eur=inputs.get("valeur_revente_eur", 5000),
+            cout_remplacement_defaut_eur=inputs.get("cout_remplacement_defaut_eur", 85000),
+        )
     return {"erreur": f"Outil inconnu : {name}"}
 
 
@@ -655,6 +805,12 @@ Format de réponse strict (Markdown) :
    les durées diffèrent — précise-le explicitement si tu compares C aux autres.
 5. **Exposition au risque** — perte estimée en cas de panne non maîtrisée
 6. **Recommandation CODIR** — une seule décision chiffrée, clairement formulée
+7. **Arbitrage budgétaire multi-machines** — UNIQUEMENT si une section
+   "ARBITRAGE BUDGÉTAIRE" apparaît dans les données ci-dessous (elle n'est
+   présente que si un budget de remplacement a été renseigné) : indique
+   clairement quelles machines sont retenues dans le budget et lesquelles ne
+   le sont pas, et pourquoi (ratio gain/investissement). Si cette section est
+   absente, ne mentionne pas l'arbitrage multi-machines.
 
 Sois synthétique et chiffré. Antoine parle au CODIR. Jamais plus de 3 niveaux de bullet.
 
@@ -673,7 +829,8 @@ def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None,
                       duree_vie_remplacement_ans: int = 12,
                       duree_installation_h: float = 8,
                       cout_formation_eur: float = 2000,
-                      valeur_revente_eur: float = 5000) -> dict:
+                      valeur_revente_eur: float = 5000,
+                      budget_disponible_eur: float = None) -> dict:
     """
     Lance l'agent Antoine.
 
@@ -688,6 +845,10 @@ def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None,
       cout_formation_eur         : coût de formation des techniciens (défaut 2000€)
       valeur_revente_eur         : valeur de revente/casse de l'ancienne machine
                                     (défaut 5000€, réduit le CAPEX net)
+      budget_disponible_eur      : si fourni, déclenche l'arbitrage budgétaire
+                                    multi-machines (arbitrer_budget_remplacement)
+                                    pour prioriser les remplacements sur tout le
+                                    parc Critique/Élevé selon ce budget
 
     Stratégie : pré-fetch de toutes les données en Python, puis
     UN SEUL appel LLM pour rédiger l'analyse. Compatible 1min.ai et Anthropic.
@@ -699,6 +860,8 @@ def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None,
       bilan      : bilan équipement
       historique : KPIs MTBF/MTTR/ROI
       stock      : valeur stock immobilisé, ruptures, délais (get_etat_stock_strategique)
+      arbitrage  : priorisation multi-machines sous contrainte budgétaire
+                   (None si budget_disponible_eur n'est pas fourni)
     """
     # ── 1. Pré-fetch toutes les données directement ───────────────────────────
     raw_portfolio  = get_top_equipements_a_risque()
@@ -712,6 +875,17 @@ def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None,
         duree_installation_h=duree_installation_h,
         cout_formation_eur=cout_formation_eur,
         valeur_revente_eur=valeur_revente_eur)
+
+    raw_arbitrage = None
+    if budget_disponible_eur is not None and budget_disponible_eur > 0:
+        raw_arbitrage = arbitrer_budget_remplacement(
+            budget_disponible_eur=budget_disponible_eur,
+            taux_actualisation=taux_actualisation,
+            duree_vie_remplacement_ans=duree_vie_remplacement_ans,
+            duree_installation_h=duree_installation_h,
+            cout_formation_eur=cout_formation_eur,
+            valeur_revente_eur=valeur_revente_eur,
+        )
 
     # ── 2. Construire le contexte complet pour le LLM ─────────────────────────
     rul_info = f" | RUL capteur : {c_rul}j" if c_rul else ""
@@ -791,7 +965,7 @@ Le CAPEX du scénario C n'est PAS que le prix d'achat — détail :
 | C — Remplacement (CAPEX complet ci-dessus) | {duree_c} ans | {_fmt(c_cout)} € | {_fmt(c_npv)} € | {_fmt(c_eac)} €/an |
 Point mort C vs A (basé sur l'écart de CAE) : {payback_str} | Économie B vs A sur {raw_scenarios.get('horizon_ans', 3)} ans : {_fmt(eco)} €
 Recommandation financière (au CAE le plus bas) : {reco}
-"""
+{_bloc_arbitrage(raw_arbitrage)}"""
 
     messages = [{"role": "user", "content": contexte}]
 
@@ -806,6 +980,7 @@ Recommandation financière (au CAE le plus bas) : {reco}
         "bilan":      raw_bilan,
         "historique": raw_historique,
         "stock":      raw_stock,
+        "arbitrage":  raw_arbitrage,
     }
 
 
