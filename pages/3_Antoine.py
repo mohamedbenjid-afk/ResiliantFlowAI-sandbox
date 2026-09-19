@@ -267,6 +267,26 @@ with tab2:
         "et alimente la fiche CODIR PDF."
     )
 
+    # ── Hypothèses financières configurables ──────────────────────────────────
+    with st.expander("⚙️ Hypothèses financières de la simulation", expanded=False):
+        st.caption(
+            "Ces paramètres pilotent le calcul NPV/CAE de l'agent. Le taux "
+            "d'actualisation reflète le coût du capital de l'entreprise (WACC) — "
+            "5% est une valeur générique, à ajuster selon le contexte réel."
+        )
+        col_taux, col_duree = st.columns(2)
+        taux_pct_input = col_taux.number_input(
+            "Taux d'actualisation (%)", min_value=0.0, max_value=20.0,
+            value=5.0, step=0.5, key="antoine_taux_actualisation"
+        )
+        duree_vie_input = col_duree.number_input(
+            "Durée de vie de l'équipement neuf (ans)", min_value=1, max_value=30,
+            value=12, step=1, key="antoine_duree_vie_remplacement",
+            help="Durée de vie réaliste après remplacement — utilisée pour comparer "
+                 "équitablement le CAPEX de remplacement aux scénarios correctif/prescriptif "
+                 "évalués sur un horizon plus court."
+        )
+
     if st.button("▶️ Lancer la simulation", use_container_width=True, key="btn_lancer_simulation"):
         st.session_state.running = False
         with st.spinner("L'agent Antoine interroge le parc machines et simule les scénarios…"):
@@ -276,7 +296,11 @@ with tab2:
                 # Le schéma Notion ESCP ne contient pas de champs température/vibration
                 # temps réel (cf. BRIEFING), donc c_temp/c_vib/c_pres ne sont pas transmis
                 # à l'agent — ils restent affichés uniquement dans le simulateur capteurs.
-                result = run_agent_antoine(equipement="Pompe P-17", c_rul=int(c_rul))
+                result = run_agent_antoine(
+                    equipement="Pompe P-17", c_rul=int(c_rul),
+                    taux_actualisation=taux_pct_input / 100,
+                    duree_vie_remplacement_ans=int(duree_vie_input),
+                )
                 st.session_state.antoine_result    = result
                 st.session_state.antoine_pdf_bytes = None  # reset PDF
                 st.session_state.antoine_pdf_ref   = None
@@ -334,8 +358,16 @@ with tab2:
         # ── Tableau des scénarios (result['scenarios']) ───────────────────────
         sc = result.get("scenarios")
         if sc and sc.get("scenarios"):
-            st.markdown("##### 💰 Simulation 3 scénarios — NPV sur "
-                        f"{sc.get('horizon_ans', 3)} ans")
+            duree_c_disp = sc.get("scenarios", {}).get("C_remplacement", {}).get("duree_annees", 12)
+            st.markdown(
+                f"##### 💰 Simulation financière — A/B sur {sc.get('horizon_ans', 3)} ans, "
+                f"C sur {duree_c_disp} ans (taux d'actualisation {sc.get('taux_actualisation_pct', 5)}%)"
+            )
+            st.caption(
+                "⚠️ A/B et C portent sur des durées différentes : leurs NPV brutes ne sont "
+                "pas comparables directement. La colonne **CAE** (Coût Annuel Équivalent) "
+                "ramène les 3 scénarios à un coût par an — c'est elle qui doit guider l'arbitrage."
+            )
 
             sc_data = sc["scenarios"]
             a = sc_data.get("A_correctif_pur", {})
@@ -354,22 +386,28 @@ with tab2:
                 {
                     "Scénario":     "A — Correctif pur",
                     "Description":  a.get("description", "—"),
+                    "Durée":        f"{a.get('duree_annees', sc.get('horizon_ans', 3))} ans",
                     "Coût total (€)": a.get("cout_total_eur", 0),
                     "NPV (€)":      a.get("npv_eur", 0),
+                    "CAE (€/an)":   a.get("cout_annuel_equivalent_eur", 0),
                     "Point mort (mois)": "—",
                 },
                 {
                     "Scénario":     "B — Maintien prescriptif",
                     "Description":  b.get("description", "—"),
+                    "Durée":        f"{b.get('duree_annees', sc.get('horizon_ans', 3))} ans",
                     "Coût total (€)": b.get("cout_total_eur", 0),
                     "NPV (€)":      b.get("npv_eur", 0),
+                    "CAE (€/an)":   b.get("cout_annuel_equivalent_eur", 0),
                     "Point mort (mois)": "—",
                 },
                 {
                     "Scénario":     "C — Remplacement",
                     "Description":  c.get("description", "—"),
+                    "Durée":        f"{c.get('duree_annees', 12)} ans",
                     "Coût total (€)": c.get("cout_total_eur", 0),
                     "NPV (€)":      c.get("npv_eur", 0),
+                    "CAE (€/an)":   c.get("cout_annuel_equivalent_eur", 0),
                     "Point mort (mois)": payback_display,
                 },
             ])
@@ -378,6 +416,7 @@ with tab2:
                 df_scenarios.style.format({
                     "Coût total (€)": lambda x: _fmt_fr(x),
                     "NPV (€)":        lambda x: _fmt_fr(x),
+                    "CAE (€/an)":     lambda x: _fmt_fr(x),
                 }),
                 use_container_width=True,
                 hide_index=True,
@@ -385,7 +424,11 @@ with tab2:
 
             reco = sc.get("recommandation_financiere", "")
             eco  = sc.get("economie_prescriptif_vs_correctif_eur", 0)
-            st.success(f"✅ **Recommandation agent :** {reco} — Économie vs correctif : **{_fmt_fr(eco)} €**")
+            eco_cae = sc.get("economie_annuelle_cae_eur", 0)
+            st.success(
+                f"✅ **Recommandation agent (au CAE le plus bas) :** {reco} — "
+                f"Économie annuelle vs correctif : **{_fmt_fr(eco_cae)} €/an**"
+            )
 
         # ── Analyse complète du LLM (result['analyse']) en markdown ──────────
         analyse = result.get("analyse", "")
