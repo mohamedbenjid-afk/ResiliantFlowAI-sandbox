@@ -109,6 +109,23 @@ def _prescription_p17_fallback(c_temp, c_vib, c_pres, c_rul):
     )
 
 
+def _looks_like_reco(txt) -> bool:
+    """Vrai si le texte ressemble a une vraie recommandation (et non a un
+    JSON d'appel d'outil laisse par le wrapper LLM, ex: {"tool_call": ...})."""
+    if not txt:
+        return False
+    t = str(txt).strip()
+    if len(t) < 40:
+        return False
+    low = t.lower()
+    if "tool_call" in low or "get_fiche_equipement" in low or '"arguments"' in low \
+            or '"name"' in low or "get_procedure" in low:
+        return False
+    if t[:1] in "{[":          # blob JSON
+        return False
+    return True
+
+
 def generer_prescription_p17(c_temp, c_vib, c_pres, c_rul):
     """Genere la recommandation de l'agent pour P-17 (surchauffe). Repli statique
     si le LLM (1min.ai) est indisponible. Le texte retourne est destine a etre
@@ -116,7 +133,7 @@ def generer_prescription_p17(c_temp, c_vib, c_pres, c_rul):
     try:
         from agents.agent_lionel import run_agent_lionel
         txt = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
-        if txt and len(str(txt).strip()) > 40:
+        if _looks_like_reco(txt):
             return str(txt)
     except Exception:
         pass

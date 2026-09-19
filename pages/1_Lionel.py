@@ -307,21 +307,19 @@ with tab_jour:
         # On ne régénère plus à la volée : la reco reste attachée à l'intervention.
         st.markdown("**🤖 Consigne de l'agent** — figée à l'affectation")
         _stored = (_act.get("description") or "").strip()
-        _is_reco = bool(_stored) and not _stored.lower().startswith("affectation") and _stored not in ("-", "—")
+        _is_reco = handoff_ui._looks_like_reco(_stored) and not _stored.lower().startswith("affectation")
         if _is_reco:
             st.markdown(_stored)
             _consigne = _stored
         elif _act.get("machine") == "P-17":
-            # Repli (intervention créée avant la mise en place, ou reco absente)
-            _ck = "_consigne_P17"
+            # Reco absente ou invalide (ex: JSON tool_call) → on (re)génère une
+            # vraie recommandation via l'agent validé (repli statique si LLM KO).
+            _ck = "_consigne_P17_" + str(_act.get("id", "x"))
             if _ck not in st.session_state:
                 with st.spinner("🤖 L'agent prépare la consigne terrain…"):
-                    try:
-                        st.session_state[_ck] = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
-                    except Exception:
-                        st.session_state[_ck] = _fallback_reco_lionel(c_temp, c_vib, c_pres, c_rul)
+                    st.session_state[_ck] = handoff_ui.generer_prescription_p17(
+                        float(c_temp), float(c_vib), float(c_pres), int(c_rul))
             _consigne = st.session_state[_ck]
-            st.caption("_(reco non stockée sur l'intervention — régénérée en repli)_")
             st.markdown(_consigne)
         else:
             _consigne = "Exécuter l'intervention planifiée selon la gamme."
