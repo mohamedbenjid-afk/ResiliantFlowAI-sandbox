@@ -42,9 +42,9 @@ st.sidebar.page_link("streamlit_home.py", label="⬅️ Retour à l'accueil", us
 st.markdown("### 🛡️ Conformité Réglementaire, Sécurité & Audit HSE — Leila")
 st.markdown("*Intégration native de la sécurité au cœur des interventions critiques et génération automatique de preuves d'audits.*")
 
-# ── ONGLETS ───────────────────────────────────────────────────────────────────
-handoff_ui.popup_leila_validation()
+handoff_ui.liste_validation_leila()
 
+# ── ONGLETS ───────────────────────────────────────────────────────────────────
 tab0, tab1, tab2, tab3 = st.tabs([
     "🛡️ L0 — Alerte HSE & EPI",
     "📋 L1 — Conformité Hebdo",

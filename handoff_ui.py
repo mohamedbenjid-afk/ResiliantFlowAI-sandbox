@@ -137,6 +137,47 @@ def popup_leila_validation(machine="P-17"):
     _dlg()
 
 
+def liste_validation_leila(machine=None):
+    """Recap des interventions en attente de validation HSE, avec Valider / Decliner.
+    Valider -> statut "En cours" (declenche le pop-up feu vert chez Lionel).
+    Decliner -> statut "Reportee" (refus HSE)."""
+    a_valider = _interventions(statut="Planifiée", machine=machine)
+    st.markdown("#### 🛡️ Interventions à valider (HSE)")
+    if not a_valider:
+        st.info("Aucune intervention en attente de validation HSE.")
+        st.divider()
+        return
+    for interv in a_valider:
+        iid = interv.get("id")
+        st.markdown(
+            "**" + str(interv.get("titre", "Intervention")) + "**  ·  "
+            + str(interv.get("machine", "?")) + "  ·  "
+            + (str(interv.get("technicien")) if interv.get("technicien") else "non assigné")
+        )
+        st.caption("Type : " + str(interv.get("type", "-"))
+                   + "   |   Date : " + (str(interv.get("date")) if interv.get("date") else "-"))
+        c1, c2, _ = st.columns([1, 1, 3])
+        if c1.button("✅ Valider", key="hse_ok_" + str(iid), type="primary"):
+            try:
+                nc.set_statut_intervention(
+                    iid, "En cours",
+                    note="Autorisée HSE (EPI, consignation, habilitation) - écart HSE : 0")
+                st.success("Intervention autorisée — envoyée à Lionel.")
+                st.rerun()
+            except Exception as e:
+                st.error("Échec Notion : " + str(e))
+        if c2.button("✖ Décliner", key="hse_no_" + str(iid)):
+            try:
+                nc.set_statut_intervention(
+                    iid, "Reportée",
+                    note="Refusée par la HSE - conditions de sécurité non réunies.")
+                st.warning("Intervention refusée (reportée).")
+                st.rerun()
+            except Exception as e:
+                st.error("Échec Notion : " + str(e))
+        st.divider()
+
+
 def banniere_sophie_cloture(machine="P-17"):
     """Banniere chez Sophie quand une intervention est cloturee (Réalisée)."""
     if _interventions(statut="Réalisée", machine=machine):
