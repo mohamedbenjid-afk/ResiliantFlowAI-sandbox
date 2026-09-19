@@ -122,8 +122,6 @@ _labels += ["✅ K3 — Post-intervention", "⚖️ K4 — Arbitrage"]
 
 _tabs = st.tabs(_labels)
 tab_jour = _tabs[0]
-if not handoff_ui.popup_lionel():
-    handoff_ui.popup_lionel_hse_ok()
 tab_dash = _tabs[1]
 tab0 = _tabs[2]
 tab1 = _tabs[3]
@@ -216,7 +214,7 @@ def _hab_ok(interv, mes_hab):
 with tab_jour:
     st.subheader("☀️ Ma journée — Lionel · " + datetime.date.today().strftime("%d/%m/%Y"))
     st.caption("Ton poste de travail : ta charge du jour, tes interventions, la consigne de l'agent, ton compte-rendu.")
-    handoff_ui.carte_etat_hse_lionel()
+    handoff_ui.tables_interventions_lionel()
 
     if "mes_interventions" not in st.session_state:
         st.session_state["mes_interventions"] = _charger_mes_interventions()

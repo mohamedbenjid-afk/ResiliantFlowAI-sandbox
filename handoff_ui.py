@@ -25,6 +25,70 @@ def _interventions(statut=None, machine=None):
     return out
 
 
+# ── Tri par urgence (priorite puis date) ───────────────────────────────────────
+_PRIO_RANK = {"P1 - Critique": 1, "P2 - Haute": 2, "P3 - Normale": 3, "P4 - Basse": 4}
+
+
+def _tri_urgence(i):
+    return (_PRIO_RANK.get(str(i.get("priorite") or ""), 9),
+            str(i.get("date") or "9999-12-31"))
+
+
+def _table_interv_lionel(rows, avec_action=False):
+    widths = [3.6, 1.0, 2.0, 1.4, 1.3] + ([1.4] if avec_action else [])
+    labels = ["Intervention", "Machine", "Type", "Priorité", "Date"] + (["Action"] if avec_action else [])
+    header = st.columns(widths)
+    for col, label in zip(header, labels):
+        col.markdown("**" + label + "**")
+    st.markdown("<hr style='margin:2px 0 6px 0;border:none;border-top:1px solid #d0d0d0'>",
+                unsafe_allow_html=True)
+    for i in rows:
+        iid = i.get("id")
+        c = st.columns(widths)
+        c[0].write(str(i.get("titre", "Intervention")))
+        c[1].write(str(i.get("machine", "-")))
+        c[2].write(str(i.get("type", "-")))
+        c[3].write(str(i.get("priorite")) if i.get("priorite") else "-")
+        c[4].write(str(i.get("date")) if i.get("date") else "-")
+        if avec_action:
+            if c[5].button("✅ Terminer", key="fin_" + str(iid)):
+                try:
+                    nc.set_statut_intervention(
+                        iid, "Réalisée",
+                        note="Intervention réalisée et clôturée par le technicien.")
+                    st.success("Intervention clôturée. Sophie en est notifiée.")
+                    st.rerun()
+                except Exception as e:
+                    st.error("Échec Notion : " + str(e))
+
+
+def tables_interventions_lionel(nom_technicien="Lionel"):
+    """Deux listes triees par urgence (priorite puis date) : pretes a lancer
+    (validees HSE, statut En cours) et en attente HSE (statut Planifiee)."""
+    def _miennes(statut):
+        return sorted(
+            [i for i in _interventions(statut=statut)
+             if nom_technicien.lower() in str(i.get("technicien", "")).lower()],
+            key=_tri_urgence)
+
+    pretes = _miennes("En cours")
+    attente = _miennes("Planifiée")
+
+    st.markdown("#### ✅ Prêtes à lancer (validées HSE)")
+    if pretes:
+        _table_interv_lionel(pretes, avec_action=True)
+    else:
+        st.caption("Aucune intervention validée par la HSE pour le moment.")
+
+    st.markdown("#### ⏳ En attente de validation HSE")
+    if attente:
+        _table_interv_lionel(attente, avec_action=False)
+    else:
+        st.caption("Aucune intervention en attente de validation.")
+    st.divider()
+
+
+
 def popup_lionel(nom_technicien="Lionel"):
     """Pop-up chez Lionel des qu'une intervention Planifiée lui est affectee.
     Renvoie True si un dialog a ete ouvert (pour eviter d'en ouvrir un 2e)."""
