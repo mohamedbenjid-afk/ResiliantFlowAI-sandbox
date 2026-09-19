@@ -381,11 +381,27 @@ def simuler_scenarios_investissement(
     cout_remplacement_eur: float = 85000,
     horizon_ans: int = 3,
     taux_actualisation: float = 0.05,
+    duree_vie_remplacement_ans: int = 12,
 ) -> dict:
     """
     Scénario A — Correctif pur : pannes au rythme historique, coûts croissants
     Scénario B — Maintien prescriptif : approche ResilientFlow actuelle
     Scénario C — Remplacement maintenant : CAPEX immédiat + maintenance résiduelle faible
+
+    Correctif (revue Antoine) :
+      - taux_actualisation est désormais un paramètre pilotable depuis l'UI
+        (avant : figé à 5% en dur, sans lien avec le coût du capital réel).
+      - Le scénario C est calculé sur sa propre durée de vie réaliste
+        (duree_vie_remplacement_ans, 12 ans par défaut) et non plus sur les
+        mêmes 3 ans que A/B : comparer un CAPEX amorti sur 3 ans à de la
+        maintenance sur 3 ans pénalisait structurellement le remplacement,
+        alors qu'une pompe neuve dure généralement 10-15 ans.
+      - Comme A/B (horizon_ans) et C (duree_vie_remplacement_ans) ne portent
+        plus sur la même durée, comparer leurs NPV brutes n'a plus de sens
+        financier. On calcule donc en plus un Coût Annuel Équivalent (CAE)
+        pour chaque scénario — méthode standard pour comparer des options
+        d'investissement à durées de vie différentes — et c'est le CAE qui
+        détermine la recommandation, pas la NPV brute.
     """
     hist  = get_historique_couts_maintenance(equipement)
     bilan = get_bilan_equipement(equipement)
@@ -414,11 +430,24 @@ def simuler_scenarios_investissement(
     def npv(cashflows):
         return sum(cf / (1 + taux_actualisation) ** t for t, cf in enumerate(cashflows, 1))
 
+    def cout_annuel_equivalent(cout_npv_positif: float, n: int) -> float:
+        """Convertit un coût actualisé (NPV, positif) en coût annuel équivalent
+        sur n années — permet de comparer équitablement des scénarios dont
+        les horizons diffèrent (ex: 3 ans pour A/B vs 12 ans pour C)."""
+        if n <= 0:
+            return cout_npv_positif
+        if taux_actualisation == 0:
+            return cout_npv_positif / n
+        facteur = taux_actualisation / (1 - (1 + taux_actualisation) ** -n)
+        return cout_npv_positif * facteur
+
+    # A et B : évalués sur horizon_ans (choix opérationnel court terme)
     cf_a = [-pannes_par_an_correctif * cout_panne_moyen * (facteur_escalade ** y)
             for y in range(1, horizon_ans + 1)]
     cf_b = [-(cout_prescriptif_annuel * (1.03 ** y) + pannes_par_an_prescriptif * cout_panne_moyen)
             for y in range(1, horizon_ans + 1)]
-    cf_c = [-cout_remplacement_eur] + [-1500] * horizon_ans
+    # C : évalué sur sa propre durée de vie réaliste, pas sur horizon_ans
+    cf_c = [-cout_remplacement_eur] + [-1500] * duree_vie_remplacement_ans
 
     npv_a = npv(cf_a)
     npv_b = npv(cf_b)
@@ -428,19 +457,29 @@ def simuler_scenarios_investissement(
     cout_total_b = -sum(cf_b)
     cout_total_c = -sum(cf_c)
 
-    meilleur = max(
-        [("B — Maintien prescriptif", npv_b),
-         ("C — Remplacement",         npv_c),
-         ("A — Correctif pur",        npv_a)],
+    eac_a = cout_annuel_equivalent(-npv_a, horizon_ans)
+    eac_b = cout_annuel_equivalent(-npv_b, horizon_ans)
+    eac_c = cout_annuel_equivalent(-npv_c, duree_vie_remplacement_ans)
+
+    # Recommandation basée sur le CAE (coût annuel équivalent le plus bas),
+    # seule comparaison valide entre scénarios de durées différentes.
+    meilleur = min(
+        [("A — Correctif pur",        eac_a),
+         ("B — Maintien prescriptif", eac_b),
+         ("C — Remplacement",         eac_c)],
         key=lambda x: x[1]
     )[0]
 
-    eco_annuelle = (cout_total_a - cout_total_c) / horizon_ans
+    # Point mort : économie annuelle réelle = différence de CAE (et non plus
+    # une différence de coût total sur des durées non comparables).
+    eco_annuelle = eac_a - eac_c
     payback_mois = round((cout_remplacement_eur / eco_annuelle) * 12, 1) if eco_annuelle > 0 else None
 
     return {
         "equipement":    equipement,
         "horizon_ans":   horizon_ans,
+        "duree_vie_remplacement_ans": duree_vie_remplacement_ans,
+        "taux_actualisation_pct": round(taux_actualisation * 100, 1),
         "hypotheses": {
             "cout_panne_moyen_eur":           round(cout_panne_moyen, 0),
             "pannes_par_an_sans_prescriptif": pannes_par_an_correctif,
@@ -454,23 +493,31 @@ def simuler_scenarios_investissement(
                 "cashflows_annuels_eur":   [round(c, 0) for c in cf_a],
                 "cout_total_eur":          round(cout_total_a, 0),
                 "npv_eur":                 round(npv_a, 0),
+                "cout_annuel_equivalent_eur": round(eac_a, 0),
+                "duree_annees":            horizon_ans,
             },
             "B_maintien_prescriptif": {
                 "description":             "Continuité ResilientFlow AI — réduction pannes 80%",
                 "cashflows_annuels_eur":   [round(c, 0) for c in cf_b],
                 "cout_total_eur":          round(cout_total_b, 0),
                 "npv_eur":                 round(npv_b, 0),
+                "cout_annuel_equivalent_eur": round(eac_b, 0),
+                "duree_annees":            horizon_ans,
             },
             "C_remplacement": {
-                "description":             f"Remplacement immédiat — CAPEX {_fmt(cout_remplacement_eur)} €",
+                "description":             f"Remplacement immédiat — CAPEX {_fmt(cout_remplacement_eur)} € "
+                                            f"(amorti sur {duree_vie_remplacement_ans} ans)",
                 "cashflows_annuels_eur":   [round(c, 0) for c in cf_c],
                 "cout_total_eur":          round(cout_total_c, 0),
                 "npv_eur":                 round(npv_c, 0),
+                "cout_annuel_equivalent_eur": round(eac_c, 0),
+                "duree_annees":            duree_vie_remplacement_ans,
                 "payback_vs_correctif_mois": payback_mois,
             },
         },
         "recommandation_financiere":               meilleur,
         "economie_prescriptif_vs_correctif_eur":  round(cout_total_a - cout_total_b, 0),
+        "economie_annuelle_cae_eur":              round(eco_annuelle, 0),
     }
 
 
