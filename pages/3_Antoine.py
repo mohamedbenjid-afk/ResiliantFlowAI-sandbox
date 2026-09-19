@@ -269,6 +269,43 @@ with tab2:
 
     # ── Hypothèses financières configurables ──────────────────────────────────
     with st.expander("⚙️ Hypothèses financières de la simulation", expanded=False):
+        # CSS ciblé par key (fonctionnalité stable Streamlit : chaque widget
+        # avec un `key` reçoit la classe .st-key-<key> sur son conteneur).
+        # On colore chaque bloc avec la même palette que les cartes KPI, pour
+        # une cohérence visuelle avec le reste de l'onglet.
+        st.markdown("""
+            <style>
+            div.st-key-antoine_taux_actualisation,
+            div.st-key-antoine_duree_vie_remplacement,
+            div.st-key-antoine_duree_installation,
+            div.st-key-antoine_cout_formation,
+            div.st-key-antoine_valeur_revente,
+            div.st-key-antoine_budget_disponible {
+                border-radius: 8px;
+                padding: 8px 10px 4px 10px;
+                border-left: 4px solid;
+            }
+            div.st-key-antoine_taux_actualisation {          /* bleu */
+                background-color: #dbeafe; border-left-color: #2563eb;
+            }
+            div.st-key-antoine_duree_vie_remplacement {      /* jaune */
+                background-color: #fef9c3; border-left-color: #eab308;
+            }
+            div.st-key-antoine_duree_installation {          /* orange */
+                background-color: #ffedd5; border-left-color: #ea580c;
+            }
+            div.st-key-antoine_cout_formation {              /* violet */
+                background-color: #ede9fe; border-left-color: #7c3aed;
+            }
+            div.st-key-antoine_valeur_revente {              /* vert */
+                background-color: #dcfce7; border-left-color: #16a34a;
+            }
+            div.st-key-antoine_budget_disponible {           /* orange brique */
+                background-color: #fbe4d8; border-left-color: #b7410e;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
         st.caption(
             "Ces paramètres pilotent le calcul NPV/CAE de l'agent. Le taux "
             "d'actualisation reflète le coût du capital de l'entreprise (WACC) — "
