@@ -141,6 +141,56 @@ def generer_prescription_p17(c_temp, c_vib, c_pres, c_rul):
 
 
 
+# ── Aide IA a la redaction du compte-rendu d'intervention (cote Lionel) ─────────
+def _cr_fallback(interv, pieces, duree, resultat):
+    lignes = [
+        "Intervention " + str(interv.get("titre", "")) + " sur "
+        + str(interv.get("machine", "P-17")) + " realisee.",
+    ]
+    if pieces:
+        lignes.append("Pieces remplacees : " + ", ".join(pieces) + ".")
+    lignes.append("Duree reelle : " + str(duree) + " h. Resultat : " + str(resultat) + ".")
+    lignes.append("Controles apres remise en service effectues (temperature, vibration, "
+                  "pression) ; machine reintegree en production.")
+    return " ".join(lignes)
+
+
+def rediger_cr_ia(interv, consigne, pieces, duree, resultat, controle_ok):
+    """Redige un brouillon d'observations terrain pour le compte-rendu de Lionel,
+    a partir du contexte (intervention, consigne de l'agent, pieces, duree...).
+    Utilise le LLM SANS outils (texte simple) ; repli deterministe si indisponible."""
+    contexte = (
+        "Intervention : " + str(interv.get("titre", "")) + "\n"
+        "Machine : " + str(interv.get("machine", "P-17")) + "\n"
+        "Type : " + str(interv.get("type", "")) + " | Priorite : " + str(interv.get("priorite", "")) + "\n"
+        "Pieces reellement remplacees : " + (", ".join(pieces) if pieces else "aucune") + "\n"
+        "Duree reelle : " + str(duree) + " h\n"
+        "Resultat declare : " + str(resultat) + "\n"
+        "Controles apres remise en service OK : " + ("oui" if controle_ok else "non") + "\n"
+        "Consigne suivie (extrait) : " + (str(consigne)[:900] if consigne else "n/a")
+    )
+    system = (
+        "Tu es l'assistant du technicien de maintenance Lionel. Redige un compte-rendu "
+        "d'intervention terrain, factuel, professionnel et concis (4 a 6 phrases, en francais). "
+        "Structure : geste realise, pieces changees, controles apres remise en service, etat final "
+        "de la machine, et toute reserve ou point de vigilance. Pas de listes a puces, pas de titres, "
+        "uniquement du texte redige. N'invente aucune donnee : appuie-toi uniquement sur le contexte."
+    )
+    try:
+        from llm_client import chat
+        resp = chat(system=system,
+                    messages=[{"role": "user", "content": contexte}],
+                    tools=None, max_tokens=400)
+        txt = resp.final_text().strip()
+        low = txt.lower()
+        if txt and len(txt) > 30 and "tool_call" not in low and txt[:1] not in "{[":
+            return txt
+    except Exception:
+        pass
+    return _cr_fallback(interv, pieces, duree, resultat)
+
+
+
 def popup_lionel(nom_technicien="Lionel"):
     """Pop-up chez Lionel des qu'une intervention Planifiée lui est affectee.
     Renvoie True si un dialog a ete ouvert (pour eviter d'en ouvrir un 2e)."""

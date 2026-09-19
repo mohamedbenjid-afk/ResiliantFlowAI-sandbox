@@ -211,6 +211,40 @@ def _hab_ok(interv, mes_hab):
     return (not req) or (not mes_hab) or req.issubset(set(mes_hab))
 
 
+def _split_composants(txt):
+    """Parse une chaine de composants ('a, b; c') en liste propre."""
+    if not txt:
+        return []
+    import re as _re
+    parts = _re.split(r"[;,]|\bet\b|\n", str(txt))
+    return [p.strip(" .-") for p in parts if p.strip(" .-")]
+
+
+def _pieces_options_pour(interv):
+    """Options de la liste des pieces : stock Notion compatible avec la machine
+    + composants deja suggeres sur l'intervention (dedupliques, ordonnes)."""
+    opts = []
+    try:
+        for p in (nc.get_pieces(interv.get("machine")) or []):
+            d = str(p.get("designation") or "").strip()
+            ref = str(p.get("reference") or "").strip()
+            label = (d + (" (" + ref + ")" if ref else "")).strip()
+            if label:
+                opts.append(label)
+    except Exception:
+        pass
+    for c in _split_composants(interv.get("composants", "")):
+        if c not in opts:
+            opts.append(c)
+    # dedup en conservant l'ordre
+    seen, out = set(), []
+    for o in opts:
+        if o not in seen:
+            seen.add(o); out.append(o)
+    return out
+
+
+
 with tab_jour:
     st.subheader("☀️ Ma journée — Lionel · " + datetime.date.today().strftime("%d/%m/%Y"))
     st.caption("Ton poste de travail : ta charge du jour, tes interventions, la consigne de l'agent, ton compte-rendu.")
@@ -340,16 +374,36 @@ with tab_jour:
                 st.warning("Alerte non envoyée : " + str(_e)[:120])
 
         # Compte-rendu (traçabilité) → Notion + notif Sophie
-        with st.form("cr_form"):
-            st.markdown("**✅ Compte-rendu d'intervention** (tout est tracé)")
-            _q1 = st.selectbox("Résultat", ["Réalisée — conforme", "Réalisée — avec réserve", "Non réalisée — escaladée"])
-            _q2 = st.text_input("Pièces réellement remplacées", str(_act.get("composants", "")))
-            _q3 = st.number_input("Durée réelle (h)", 0.0, 24.0,
-                                  float(_act.get("duree_estimee") or 0.5), 0.1)
-            _q4 = st.text_area("Observations terrain", "")
-            _q5 = st.checkbox("Contrôles OK après remise en service (T, vib, P dans les seuils)")
-            _sub = st.form_submit_button("💾 Enregistrer et notifier Sophie")
+        st.markdown("**✅ Compte-rendu d'intervention** (tout est tracé)")
+        _iid = str(_act.get("id", "x"))
+        _pieces_opts = _pieces_options_pour(_act)
+        _def_pieces = [p for p in _split_composants(_act.get("composants", "")) if p in _pieces_opts]
+
+        _q1 = st.selectbox("Résultat",
+                           ["Réalisée — conforme", "Réalisée — avec réserve", "Non réalisée — escaladée"],
+                           key="cr_res_" + _iid)
+        # Liste des pièces réellement remplacées = multi-sélection (stock Notion)
+        _q2 = st.multiselect("Pièces réellement remplacées", _pieces_opts,
+                             default=_def_pieces, key="cr_pieces_" + _iid,
+                             help="Sélectionne les pièces dans le stock ; ajoute-en plusieurs si besoin.")
+        _q3 = st.number_input("Durée réelle (h)", 0.0, 24.0,
+                              float(_act.get("duree_estimee") or 0.5), 0.1, key="cr_duree_" + _iid)
+        _q5 = st.checkbox("Contrôles OK après remise en service (T, vib, P dans les seuils)",
+                          key="cr_ctrl_" + _iid)
+
+        # Assistance IA : rédige un brouillon d'observations à partir du contexte
+        _obs_key = "cr_obs_" + _iid
+        _cia1, _cia2 = st.columns([1, 3])
+        if _cia1.button("🤖 Rédiger avec l'IA", key="cr_ia_" + _iid, use_container_width=True):
+            with st.spinner("🤖 L'agent rédige ton compte-rendu…"):
+                st.session_state[_obs_key] = handoff_ui.rediger_cr_ia(
+                    _act, _consigne, _q2, _q3, _q1, _q5)
+        _cia2.caption("L'IA propose un brouillon d'observations ; tu peux le corriger avant d'enregistrer.")
+        _q4 = st.text_area("Observations terrain", key=_obs_key)
+
+        _sub = st.button("💾 Enregistrer et notifier Sophie", key="cr_submit_" + _iid, type="primary")
         if _sub:
+            _q2 = ", ".join(_q2) if isinstance(_q2, list) else str(_q2)
             _data = {
                 "titre": "CR — " + _act.get("titre", ""),
                 "machine": _act.get("machine", "P-17"),
@@ -358,6 +412,7 @@ with tab_jour:
                 "technicien": "Lionel",
                 "composants": _q2,
                 "description": _q4 or _act.get("description", ""),
+                "observations": _q4,  # ecrit dans Description via update_intervention
                 "resultat": f"{_q1}. Contrôles {'OK' if _q5 else 'à revoir'}. Durée réelle {_q3} h.",
                 "duree_reelle": _q3,
             }
