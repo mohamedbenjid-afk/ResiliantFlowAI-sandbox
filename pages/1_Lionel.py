@@ -115,7 +115,7 @@ STATUS_BG    = {"Nominal": "#dcfce7", "Alerte": "#fef3c7", "Critique": "#fee2e2"
 
 # ── TABS — K2 « Procédure » visible uniquement en Alerte/Critique (surchauffe) ─
 _show_k2 = r_status in ("Alerte", "Critique")
-_labels = ["☀️ Ma journée", "📊 Mon poste", "📡 K0 — Surveillance"]
+_labels = ["☀️ Ma journée", "📊 Mon poste", "📡 K0 — Surveillance", "📚 Historique"]
 if _show_k2:
     _labels.append("🔧 K2 — Procédure 🔔")
 # K1 (Briefing), K3 (Post-intervention) et K4 (Arbitrage) masqués : « Ma journée »
@@ -124,11 +124,12 @@ _tabs = st.tabs(_labels)
 tab_jour = _tabs[0]
 tab_dash = _tabs[1]
 tab0 = _tabs[2]
+tab_hist = _tabs[3]
 tab1 = None  # onglet K1 masqué
 tab3 = None  # onglet K3 masqué
 tab4 = None  # onglet K4 masqué
 if _show_k2:
-    tab2 = _tabs[3]
+    tab2 = _tabs[4]
 else:
     tab2 = None
 
@@ -360,34 +361,6 @@ with tab_jour:
     # « Traiter » ouvre le panneau ci-dessous (consigne de l'agent figée à
     # l'affectation + sécurité + compte-rendu). Source unique, pas de doublon.
     handoff_ui.tables_interventions_lionel()
-
-    # ── Historique de mes interventions (clôturées / passées) ────────────────
-    with st.expander("📚 Historique de mes interventions", expanded=False):
-        try:
-            _all = nc.get_historique(limit=200) or []
-        except Exception:
-            _all = []
-        _CLOS = ("Réalisée", "Annulée", "Reportée", "En retard")
-        _hist = [i for i in _all
-                 if "lionel" in str(i.get("technicien", "")).lower()
-                 and str(i.get("statut", "")) in _CLOS]
-        _hist.sort(key=lambda i: str(i.get("date_realisee") or i.get("date") or ""),
-                   reverse=True)
-        if not _hist:
-            st.caption("Aucune intervention passée pour le moment.")
-        else:
-            _rows = [{
-                "Date": (i.get("date_realisee") or i.get("date") or "—"),
-                "Intervention": i.get("titre", ""),
-                "Machine": i.get("machine", "—"),
-                "Type": i.get("type", "—"),
-                "Statut": i.get("statut", "—"),
-                "Durée (h)": i.get("duree_reelle") if i.get("duree_reelle") is not None else i.get("duree_estimee"),
-                "Pièces": i.get("composants", "") or "",
-                "Résultat": i.get("resultat", "") or "",
-            } for i in _hist]
-            st.dataframe(_rows, use_container_width=True, hide_index=True)
-            st.caption(f"{len(_hist)} intervention(s) dans l'historique.")
 
     # ── Panneau intervention sélectionnée : consigne + sécurité + CR ─────────
     _act = st.session_state.get("intervention_active")
@@ -929,6 +902,81 @@ with tab0:
         st.session_state.pop("_agent_reco", None)
         st.session_state.pop("_email_sent", None)
         st.session_state.pop("_email_result", None)
+
+# ════════════════════════════════════════════════════════════════════════════════
+# ONGLET « 📚 Historique » — interventions passées de Lionel (filtres date + machine)
+# ════════════════════════════════════════════════════════════════════════════════
+with tab_hist:
+    st.markdown("## 📚 Historique de mes interventions")
+    st.caption("Toutes tes interventions clôturées ou passées, filtrables par date et par machine.")
+
+    try:
+        _hall = nc.get_historique(limit=200) or []
+    except Exception:
+        _hall = []
+    _CLOS = ("Réalisée", "Annulée", "Reportée", "En retard")
+    _mine_hist = [i for i in _hall
+                  if "lionel" in str(i.get("technicien", "")).lower()
+                  and str(i.get("statut", "")) in _CLOS]
+
+    if not _mine_hist:
+        st.info("Aucune intervention passée pour le moment.")
+    else:
+        def _hdate(i):
+            return str(i.get("date_realisee") or i.get("date") or "")
+
+        # ── Filtres ────────────────────────────────────────────────────────────
+        _machs = sorted({str(i.get("machine")) for i in _mine_hist if i.get("machine")})
+        _dates = [_hdate(i)[:10] for i in _mine_hist if _hdate(i)]
+        import datetime as _dt
+        def _parse(d):
+            try:
+                return _dt.date.fromisoformat(d[:10])
+            except Exception:
+                return None
+        _pdates = [d for d in (_parse(x) for x in _dates) if d]
+        _dmin = min(_pdates) if _pdates else _dt.date.today()
+        _dmax = max(_pdates) if _pdates else _dt.date.today()
+
+        _cf1, _cf2 = st.columns([2, 2])
+        with _cf1:
+            _sel_mach = st.selectbox("🏭 Machine", ["Toutes"] + _machs, index=0, key="hist_mach")
+        with _cf2:
+            _rng = st.date_input("📅 Période", value=(_dmin, _dmax),
+                                 min_value=_dmin, max_value=_dmax, key="hist_dates")
+        if isinstance(_rng, (list, tuple)) and len(_rng) == 2:
+            _d0, _d1 = _rng
+        else:
+            _d0, _d1 = _dmin, _dmax
+
+        # ── Application des filtres ─────────────────────────────────────────────
+        def _keep(i):
+            if _sel_mach != "Toutes" and str(i.get("machine")) != _sel_mach:
+                return False
+            _d = _parse(_hdate(i))
+            if _d is not None and (_d < _d0 or _d > _d1):
+                return False
+            return True
+
+        _filtered = sorted([i for i in _mine_hist if _keep(i)],
+                           key=_hdate, reverse=True)
+
+        st.markdown(f"**{len(_filtered)}** intervention(s) sur {len(_mine_hist)} au total.")
+        if not _filtered:
+            st.caption("Aucune intervention ne correspond aux filtres.")
+        else:
+            _rows = [{
+                "Date": (i.get("date_realisee") or i.get("date") or "—"),
+                "Intervention": i.get("titre", ""),
+                "Machine": i.get("machine", "—"),
+                "Type": i.get("type", "—"),
+                "Statut": i.get("statut", "—"),
+                "Durée (h)": i.get("duree_reelle") if i.get("duree_reelle") is not None else i.get("duree_estimee"),
+                "Pièces": i.get("composants", "") or "",
+                "Résultat": i.get("resultat", "") or "",
+            } for i in _filtered]
+            st.dataframe(_rows, use_container_width=True, hide_index=True)
+
 
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 1 — K1 BRIEFING
