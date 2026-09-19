@@ -159,9 +159,11 @@ def _charger_mes_interventions():
         mine = [i for i in items
                 if "lionel" in str(i.get("technicien", "")).lower()
                 and str(i.get("statut", "")) in ("Planifiée", "En cours")]
-        return mine or _FALLBACK_INTERV
+        # Source unique = données réelles Notion (mêmes filtres que les 2 listes
+        # affichées plus bas). Pas de repli fictif : le KPI doit refléter les listes.
+        return mine
     except Exception:
-        return _FALLBACK_INTERV
+        return []
 
 
 def _charger_arbitrages_sophie():
