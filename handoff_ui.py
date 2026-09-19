@@ -26,15 +26,16 @@ def _interventions(statut=None, machine=None):
 
 
 def popup_lionel(nom_technicien="Lionel"):
-    """Pop-up chez Lionel des qu'une intervention Planifiée lui est affectee."""
+    """Pop-up chez Lionel des qu'une intervention Planifiée lui est affectee.
+    Renvoie True si un dialog a ete ouvert (pour eviter d'en ouvrir un 2e)."""
     if not _HAS_DIALOG:
-        return
+        return False
     vues = st.session_state.setdefault("_lionel_popup_vues", set())
     nouvelles = [i for i in _interventions(statut="Planifiée")
                  if nom_technicien.lower() in str(i.get("technicien", "")).lower()
                  and i.get("id") and i["id"] not in vues]
     if not nouvelles:
-        return
+        return False
     interv = nouvelles[0]
 
     @st.dialog("Nouvelle intervention assignee")
@@ -50,18 +51,19 @@ def popup_lionel(nom_technicien="Lionel"):
             st.rerun()
 
     _dlg()
+    return True
 
 
 def popup_lionel_hse_ok(nom_technicien="Lionel"):
     """2e pop-up chez Lionel : Leila a valide (statut En cours) -> feu vert HSE."""
     if not _HAS_DIALOG:
-        return
+        return False
     vues = st.session_state.setdefault("_lionel_hse_ok_vues", set())
     ok = [i for i in _interventions(statut="En cours")
           if nom_technicien.lower() in str(i.get("technicien", "")).lower()
           and i.get("id") and i["id"] not in vues]
     if not ok:
-        return
+        return False
     interv = ok[0]
 
     @st.dialog("Feu vert HSE - tu peux demarrer")
@@ -73,6 +75,7 @@ def popup_lionel_hse_ok(nom_technicien="Lionel"):
             st.rerun()
 
     _dlg()
+    return True
 
 
 def carte_etat_hse_lionel(nom_technicien="Lionel"):
