@@ -138,26 +138,33 @@ def popup_leila_validation(machine="P-17"):
 
 
 def liste_validation_leila(machine=None):
-    """Recap des interventions en attente de validation HSE, avec Valider / Decliner.
+    """Recap (tableau) des interventions en attente de validation HSE.
     Valider -> statut "En cours" (declenche le pop-up feu vert chez Lionel).
     Decliner -> statut "Reportee" (refus HSE)."""
     a_valider = _interventions(statut="Planifiée", machine=machine)
     st.markdown("#### 🛡️ Interventions à valider (HSE)")
     if not a_valider:
         st.info("Aucune intervention en attente de validation HSE.")
-        st.divider()
         return
+
+    widths = [3.4, 1.0, 1.9, 2.0, 1.3, 1.4]
+    header = st.columns(widths)
+    for col, label in zip(header, ["Intervention", "Machine", "Technicien",
+                                   "Type", "Priorité", "Action"]):
+        col.markdown("**" + label + "**")
+    st.markdown("<hr style='margin:2px 0 6px 0;border:none;border-top:1px solid #d0d0d0'>",
+                unsafe_allow_html=True)
+
     for interv in a_valider:
         iid = interv.get("id")
-        st.markdown(
-            "**" + str(interv.get("titre", "Intervention")) + "**  ·  "
-            + str(interv.get("machine", "?")) + "  ·  "
-            + (str(interv.get("technicien")) if interv.get("technicien") else "non assigné")
-        )
-        st.caption("Type : " + str(interv.get("type", "-"))
-                   + "   |   Date : " + (str(interv.get("date")) if interv.get("date") else "-"))
-        c1, c2, _ = st.columns([1, 1, 3])
-        if c1.button("✅ Valider", key="hse_ok_" + str(iid), type="primary"):
+        c = st.columns(widths)
+        c[0].write(str(interv.get("titre", "Intervention")))
+        c[1].write(str(interv.get("machine", "-")))
+        c[2].write(str(interv.get("technicien")) if interv.get("technicien") else "-")
+        c[3].write(str(interv.get("type", "-")))
+        c[4].write(str(interv.get("priorite")) if interv.get("priorite") else "-")
+        act = c[5].columns(2)
+        if act[0].button("✅", key="hse_ok_" + str(iid), help="Valider (feu vert HSE)"):
             try:
                 nc.set_statut_intervention(
                     iid, "En cours",
@@ -166,7 +173,7 @@ def liste_validation_leila(machine=None):
                 st.rerun()
             except Exception as e:
                 st.error("Échec Notion : " + str(e))
-        if c2.button("✖ Décliner", key="hse_no_" + str(iid)):
+        if act[1].button("✖", key="hse_no_" + str(iid), help="Décliner (refus HSE)"):
             try:
                 nc.set_statut_intervention(
                     iid, "Reportée",
@@ -175,8 +182,7 @@ def liste_validation_leila(machine=None):
                 st.rerun()
             except Exception as e:
                 st.error("Échec Notion : " + str(e))
-        st.divider()
-
+    st.divider()
 
 def banniere_sophie_cloture(machine="P-17"):
     """Banniere chez Sophie quand une intervention est cloturee (Réalisée)."""
