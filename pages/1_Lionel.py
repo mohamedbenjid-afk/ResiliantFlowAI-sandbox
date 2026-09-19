@@ -253,9 +253,7 @@ with tab_jour:
 
     # ── Brief du matin (agent) ───────────────────────────────────────────────
     if "arbitrages_sophie" not in st.session_state:
-        st.session_state["arbitrages_sophie"] = _charger_arbitrages_sophie() or [
-            "P-17 priorisée en P1 — arrêt/bascule à valider avec Sophie avant intervention."
-        ]
+        st.session_state["arbitrages_sophie"] = _charger_arbitrages_sophie()
     _arbitrages = st.session_state["arbitrages_sophie"]
 
     _cbrief, _crefr = st.columns([4, 1])
@@ -263,11 +261,20 @@ with tab_jour:
     if _crefr.button("🔄 Rafraîchir", use_container_width=True):
         st.session_state.pop("_brief_jour", None)
     if "_brief_jour" not in st.session_state:
-        with st.spinner("🤖 L'agent prépare ton brief du matin…"):
-            try:
-                st.session_state["_brief_jour"] = resumer_journee_lionel(_interv, _arbitrages)
-            except Exception as _e:
-                st.session_state["_brief_jour"] = "_(brief indisponible : " + str(_e)[:80] + ")_"
+        if not _interv:
+            # Aucune intervention réelle : on N'APPELLE PAS le LLM (sinon il invente
+            # des interventions fictives). Message factuel aligné sur les listes.
+            st.session_state["_brief_jour"] = (
+                "☀️ **Bonjour Lionel** — aucune intervention ne t'est affectée pour le moment.\n\n"
+                "Dès que Sophie t'affecte une intervention, elle apparaît ci-dessous "
+                "(en attente de validation HSE, puis prête à lancer une fois validée par Leila)."
+            )
+        else:
+            with st.spinner("🤖 L'agent prépare ton brief du matin…"):
+                try:
+                    st.session_state["_brief_jour"] = resumer_journee_lionel(_interv, _arbitrages)
+                except Exception as _e:
+                    st.session_state["_brief_jour"] = "_(brief indisponible : " + str(_e)[:80] + ")_"
     st.markdown(st.session_state["_brief_jour"])
 
     st.divider()
