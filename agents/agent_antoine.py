@@ -550,13 +550,15 @@ TOOLS = [
     },
     {
         "name": "simuler_scenarios_investissement",
-        "description": "Simule 3 scénarios sur 3 ans avec NPV : A) correctif pur, B) maintien prescriptif, C) remplacement. Calcule point mort et recommandation optimale.",
+        "description": "Simule 3 scénarios : A) correctif pur, B) maintien prescriptif (sur horizon_ans), C) remplacement (sur sa propre durée de vie). Calcule NPV, coût annuel équivalent (CAE), point mort et recommandation optimale basée sur le CAE.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "equipement":            {"type": "string"},
-                "cout_remplacement_eur": {"type": "number"},
-                "horizon_ans":           {"type": "integer"},
+                "equipement":                  {"type": "string"},
+                "cout_remplacement_eur":       {"type": "number"},
+                "horizon_ans":                 {"type": "integer"},
+                "taux_actualisation":          {"type": "number", "description": "Taux d'actualisation en décimal, ex: 0.08 pour 8%"},
+                "duree_vie_remplacement_ans":  {"type": "integer", "description": "Durée de vie attendue de l'équipement neuf, ex: 12"},
             },
             "required": ["equipement"]
         }
@@ -575,6 +577,8 @@ def _execute(name, inputs):
             equipement=inputs["equipement"],
             cout_remplacement_eur=inputs.get("cout_remplacement_eur", 85000),
             horizon_ans=inputs.get("horizon_ans", 3),
+            taux_actualisation=inputs.get("taux_actualisation", 0.05),
+            duree_vie_remplacement_ans=inputs.get("duree_vie_remplacement_ans", 12),
         )
     return {"erreur": f"Outil inconnu : {name}"}
 
@@ -588,7 +592,11 @@ Format de réponse strict (Markdown) :
 1. **Synthèse exécutive** — 3 lignes max, chiffres clés (MTBF, ROI, RUL)
 2. **Vue portfolio** — ranking des machines par score de risque
 3. **Analyse OPEX** — coûts cumulés, MTBF/MTTR, tendance
-4. **Simulation scénarios** — tableau comparatif A/B/C avec coût total et NPV
+4. **Simulation scénarios** — tableau comparatif A/B/C avec coût total, NPV et
+   Coût Annuel Équivalent (CAE). A/B et C ont des durées différentes (horizon
+   court terme vs durée de vie réelle du remplacement) : base toujours ta
+   comparaison et ta recommandation sur le CAE, jamais sur la NPV brute quand
+   les durées diffèrent — précise-le explicitement si tu compares C aux autres.
 5. **Exposition au risque** — perte estimée en cas de panne non maîtrisée
 6. **Recommandation CODIR** — une seule décision chiffrée, clairement formulée
 
@@ -604,9 +612,18 @@ ci-dessous plutôt que de reformater les chiffres à ta façon.
 
 
 # ── FONCTION PRINCIPALE ────────────────────────────────────────────────────────
-def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None) -> dict:
+def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None,
+                      horizon_ans: int = 3, taux_actualisation: float = 0.05,
+                      duree_vie_remplacement_ans: int = 12) -> dict:
     """
     Lance l'agent Antoine.
+
+    Args (nouveaux, ajoutés pour rendre la simulation financière configurable
+    depuis l'UI plutôt que figée en dur — cf. revue impact financier) :
+      horizon_ans                : durée d'analyse des scénarios A/B (défaut 3 ans)
+      taux_actualisation         : coût du capital / WACC en décimal (défaut 0.05 = 5%)
+      duree_vie_remplacement_ans : durée de vie attendue de l'équipement neuf
+                                    pour le scénario C (défaut 12 ans)
 
     Stratégie : pré-fetch de toutes les données en Python, puis
     UN SEUL appel LLM pour rédiger l'analyse. Compatible 1min.ai et Anthropic.
@@ -625,7 +642,9 @@ def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None) -> dict
     raw_historique = get_historique_couts_maintenance(equipement)
     raw_exposition = get_exposition_financiere_production(equipement)
     raw_stock      = get_etat_stock_strategique(equipement)
-    raw_scenarios  = simuler_scenarios_investissement(equipement)
+    raw_scenarios  = simuler_scenarios_investissement(
+        equipement, horizon_ans=horizon_ans, taux_actualisation=taux_actualisation,
+        duree_vie_remplacement_ans=duree_vie_remplacement_ans)
 
     # ── 2. Construire le contexte complet pour le LLM ─────────────────────────
     rul_info = f" | RUL capteur : {c_rul}j" if c_rul else ""
@@ -637,9 +656,14 @@ def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None) -> dict
     a_npv   = sc.get("A_correctif_pur",       {}).get("npv_eur", 0)
     b_npv   = sc.get("B_maintien_prescriptif",{}).get("npv_eur", 0)
     c_npv   = sc.get("C_remplacement",         {}).get("npv_eur", 0)
+    a_eac   = sc.get("A_correctif_pur",       {}).get("cout_annuel_equivalent_eur", 0)
+    b_eac   = sc.get("B_maintien_prescriptif",{}).get("cout_annuel_equivalent_eur", 0)
+    c_eac   = sc.get("C_remplacement",         {}).get("cout_annuel_equivalent_eur", 0)
+    duree_c = sc.get("C_remplacement",         {}).get("duree_annees", duree_vie_remplacement_ans)
     payback = sc.get("C_remplacement",         {}).get("payback_vs_correctif_mois")
     reco    = raw_scenarios.get("recommandation_financiere", "—")
     eco     = raw_scenarios.get("economie_prescriptif_vs_correctif_eur", 0)
+    taux_pct = raw_scenarios.get("taux_actualisation_pct", round(taux_actualisation * 100, 1))
 
     portfolio_lines = "\n".join(
         f"  - {m['machine']} ({m['unite']}) : RUL={m['rul_jours']}j, "
@@ -679,14 +703,20 @@ DONNÉES D'ANALYSE — {equipement}{rul_info}
 - Valeur immobilisée : {_fmt(raw_stock.get('valeur_stock_immobilisee_eur', 0))} €
 - Pièces en rupture : {len(raw_stock.get('pieces_en_rupture', []))} | En alerte : {len(raw_stock.get('pieces_alerte', []))}
 
-## SIMULATION 3 SCÉNARIOS (horizon {raw_scenarios.get('horizon_ans', 3)} ans)
-| Scénario | Coût total | NPV |
-|---|---|---|
-| A — Correctif pur | {_fmt(a_cout)} € | {_fmt(a_npv)} € |
-| B — Maintien prescriptif | {_fmt(b_cout)} € | {_fmt(b_npv)} € |
-| C — Remplacement ({_fmt(raw_scenarios.get('hypotheses', {}).get('cout_remplacement_eur', 85000))} €) | {_fmt(c_cout)} € | {_fmt(c_npv)} € |
-Point mort C vs A : {payback_str} | Économie B vs A : {_fmt(eco)} €
-Recommandation financière : {reco}
+## SIMULATION D'INVESTISSEMENT — taux d'actualisation {taux_pct}%
+IMPORTANT : A et B sont évalués sur {raw_scenarios.get('horizon_ans', 3)} ans (horizon
+opérationnel court terme), C est évalué sur {duree_c} ans (durée de vie réaliste
+d'une pompe neuve). Comme les durées diffèrent, la NPV brute de C n'est PAS
+comparable directement à celle de A/B — utilise le Coût Annuel Équivalent (CAE)
+pour comparer les 3 options, c'est la colonne qui doit guider ta recommandation.
+
+| Scénario | Durée | Coût total | NPV | CAE (coût annuel équivalent) |
+|---|---|---|---|---|
+| A — Correctif pur | {raw_scenarios.get('horizon_ans', 3)} ans | {_fmt(a_cout)} € | {_fmt(a_npv)} € | {_fmt(a_eac)} €/an |
+| B — Maintien prescriptif | {raw_scenarios.get('horizon_ans', 3)} ans | {_fmt(b_cout)} € | {_fmt(b_npv)} € | {_fmt(b_eac)} €/an |
+| C — Remplacement ({_fmt(raw_scenarios.get('hypotheses', {}).get('cout_remplacement_eur', 85000))} € CAPEX) | {duree_c} ans | {_fmt(c_cout)} € | {_fmt(c_npv)} € | {_fmt(c_eac)} €/an |
+Point mort C vs A (basé sur l'écart de CAE) : {payback_str} | Économie B vs A sur {raw_scenarios.get('horizon_ans', 3)} ans : {_fmt(eco)} €
+Recommandation financière (au CAE le plus bas) : {reco}
 """
 
     messages = [{"role": "user", "content": contexte}]
