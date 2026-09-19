@@ -82,11 +82,19 @@ def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None)
     return results
 
 
-# ── IDs Notion — bases ESCP (schéma correct) — PRIORITÉ 1 ────────────────────
-DB_MACHINES   = "6653da63-bd5a-4191-815c-576b8c7fcfbc"   # machines / équipements
-DB_ORDRES_FAB = "687e40c2-a3ff-4de0-be55-20cf411f5dd6"   # ordres de fabrication
-DB_HISTORIQUE = "94babab5-03bb-4c4d-9053-08d5bff301e3"   # historique interventions
-DB_PIECES     = "ef896795-bd1a-4b20-a8ea-f121c9f846ff"   # pièces détachées
+# ── IDs Notion — alignés sur les bases [SANDBOX] de notion_client (source unique)
+# (avant : IDs codés en dur pointant vers d'anciennes bases -> rapport déconnecté)
+from notion_client import DB_IDS as _DB_IDS
+DB_MACHINES   = _DB_IDS["machines"]      # 🏭 [SANDBOX] Équipements
+DB_ORDRES_FAB = _DB_IDS["ordres_fab"]    # 📋 [SANDBOX] Ordres de Fabrication
+DB_HISTORIQUE = _DB_IDS["historique"]    # 🔩 [SANDBOX] Plan de Maintenance
+DB_PIECES     = _DB_IDS["pieces"]        # 📦 [SANDBOX] Stock Composants
+
+
+def _is_doublon(nom) -> bool:
+    """Vrai pour une ligne machine marquee comme doublon a supprimer."""
+    n = (nom or "").lower()
+    return ("doublon" in n) or ("supprimer" in n) or ("🗑" in n)
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -127,9 +135,11 @@ def get_bilan_equipement(nom: str) -> dict:
     """État de dégradation et données de fiabilité pour évaluer un remplacement CAPEX."""
     res = _notion_query(DB_MACHINES,
         filter_obj={"property": "Équipement", "title": {"contains": nom}})
+    res = [r for r in res if not _is_doublon(_text(_p(r).get("Équipement")))]
     if not res:
         return {"erreur": f"'{nom}' non trouvé dans la base machines"}
-    p = _p(res[0])
+    _exact = [r for r in res if _text(_p(r).get("Équipement")).strip() == nom.strip()]
+    p = _p(_exact[0] if _exact else res[0])
     rul_jours = round(_num(p.get("RUL nominal (h)")) / 24, 1)
     return {
         "machine":               _text(p.get("Équipement")),
@@ -321,6 +331,8 @@ def get_top_equipements_a_risque() -> dict:
         p       = _p(m)
         nom     = _text(p.get("Équipement"))
         statut  = _text(p.get("Statut"))
+        if _is_doublon(nom):
+            continue
 
         # Fix v5 : le fallback à 999 (= "aucun risque lié au RUL") ne doit
         # s'appliquer que si le champ RUL est réellement absent, pas si sa
