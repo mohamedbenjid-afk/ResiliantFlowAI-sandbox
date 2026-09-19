@@ -361,6 +361,34 @@ with tab_jour:
     # l'affectation + sécurité + compte-rendu). Source unique, pas de doublon.
     handoff_ui.tables_interventions_lionel()
 
+    # ── Historique de mes interventions (clôturées / passées) ────────────────
+    with st.expander("📚 Historique de mes interventions", expanded=False):
+        try:
+            _all = nc.get_historique(limit=200) or []
+        except Exception:
+            _all = []
+        _CLOS = ("Réalisée", "Annulée", "Reportée", "En retard")
+        _hist = [i for i in _all
+                 if "lionel" in str(i.get("technicien", "")).lower()
+                 and str(i.get("statut", "")) in _CLOS]
+        _hist.sort(key=lambda i: str(i.get("date_realisee") or i.get("date") or ""),
+                   reverse=True)
+        if not _hist:
+            st.caption("Aucune intervention passée pour le moment.")
+        else:
+            _rows = [{
+                "Date": (i.get("date_realisee") or i.get("date") or "—"),
+                "Intervention": i.get("titre", ""),
+                "Machine": i.get("machine", "—"),
+                "Type": i.get("type", "—"),
+                "Statut": i.get("statut", "—"),
+                "Durée (h)": i.get("duree_reelle") if i.get("duree_reelle") is not None else i.get("duree_estimee"),
+                "Pièces": i.get("composants", "") or "",
+                "Résultat": i.get("resultat", "") or "",
+            } for i in _hist]
+            st.dataframe(_rows, use_container_width=True, hide_index=True)
+            st.caption(f"{len(_hist)} intervention(s) dans l'historique.")
+
     # ── Panneau intervention sélectionnée : consigne + sécurité + CR ─────────
     _act = st.session_state.get("intervention_active")
     if _act:
