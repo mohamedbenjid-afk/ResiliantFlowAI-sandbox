@@ -528,6 +528,34 @@ def set_statut_intervention(page_id: str, statut: str, note: str = None) -> dict
         pass
     return resp.json()
 
+def update_intervention(page_id: str, data: dict) -> dict:
+    """Met a jour une intervention EXISTANTE avec le compte-rendu post-intervention
+    (statut, resultat, composants, duree reelle, date realisee, observations).
+    Evite de creer un doublon : le rapport est stocke SUR l'intervention.
+    Invalide le cache get_historique pour propager le changement."""
+    props = {}
+    if data.get("statut"):
+        props["Statut"] = {"select": {"name": data["statut"]}}
+    if data.get("resultat") is not None:
+        props["Résultat"] = {"rich_text": _rt_chunks(str(data["resultat"]))}
+    if data.get("composants") is not None:
+        props["Composants à remplacer"] = {"rich_text": _rt_chunks(str(data["composants"]))}
+    if data.get("duree_reelle") is not None:
+        props["Durée réelle (h)"] = {"number": float(data["duree_reelle"])}
+    if data.get("date_realisee"):
+        props["Date réalisée"] = {"date": {"start": data["date_realisee"]}}
+    if data.get("observations"):
+        props["Description"] = {"rich_text": _rt_chunks(str(data["observations"]))}
+    resp = requests.patch(f"{NOTION_BASE_URL}/pages/{page_id}",
+                          headers=_headers(), json={"properties": props}, timeout=10)
+    resp.raise_for_status()
+    try:
+        get_historique.clear()
+    except Exception:
+        pass
+    return resp.json()
+
+
 # ── CRÉER UNE DÉCISION SOPHIE (POST) ──────────────────────────────────────────
 
 def create_decision(data: dict) -> dict:

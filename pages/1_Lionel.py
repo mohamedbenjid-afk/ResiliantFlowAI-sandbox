@@ -118,21 +118,21 @@ _show_k2 = r_status in ("Alerte", "Critique")
 _labels = ["☀️ Ma journée", "📊 Mon poste", "📡 K0 — Surveillance", "📋 K1 — Briefing"]
 if _show_k2:
     _labels.append("🔧 K2 — Procédure 🔔")
-_labels += ["✅ K3 — Post-intervention", "⚖️ K4 — Arbitrage"]
+# K3 (Post-intervention) masqué : le compte-rendu se fait sur « Ma journée »
+_labels += ["⚖️ K4 — Arbitrage"]
 
 _tabs = st.tabs(_labels)
 tab_jour = _tabs[0]
 tab_dash = _tabs[1]
 tab0 = _tabs[2]
 tab1 = _tabs[3]
+tab3 = None  # onglet K3 masqué
 if _show_k2:
     tab2 = _tabs[4]
-    tab3 = _tabs[5]
-    tab4 = _tabs[6]
+    tab4 = _tabs[5]
 else:
     tab2 = None
-    tab3 = _tabs[4]
-    tab4 = _tabs[5]
+    tab4 = _tabs[4]
 
 # ════════════════════════════════════════════════════════════════════════════════
 # ONGLET « ☀️ Ma journée » — brief matinal (agent) + choix traiter / reporter
@@ -363,8 +363,13 @@ with tab_jour:
                 "resultat": f"{_q1}. Contrôles {'OK' if _q5 else 'à revoir'}. Durée réelle {_q3} h.",
                 "duree_reelle": _q3,
             }
+            _data["date_realisee"] = datetime.date.today().isoformat()
             try:
-                nc.create_intervention(_data)
+                if _act.get("id"):
+                    nc.update_intervention(_act["id"], _data)
+                else:
+                    nc.create_intervention(_data)
+                st.session_state.pop("mes_interventions", None)
                 st.success("Compte-rendu enregistré dans Notion ✅ (traçabilité).")
                 try:
                     from notify import envoyer_bon_de_travail
@@ -1099,7 +1104,7 @@ if tab2 is not None:
     st.progress(pct_done, text=f"{checked_total}/{step_total} étapes validées")
 
     if pct_done == 1.0:
-        st.success("✅ Procédure complète — passez à l'onglet **K3 Post-intervention**.")
+        st.success("✅ Procédure complète — renseignez le compte-rendu depuis l'onglet **☀️ Ma journée**.")
 
     # ── Actions : réinitialiser + bon de travail ──────────────────────────────
     col_r, col_g = st.columns([1, 2])
