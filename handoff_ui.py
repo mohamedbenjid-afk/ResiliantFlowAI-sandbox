@@ -142,15 +142,17 @@ def popup_leila_validation(machine="P-17"):
 
 def liste_validation_leila(machine=None):
     """Recap (tableau) des interventions en attente de validation HSE.
-    Valider -> statut "En cours" (declenche le pop-up feu vert chez Lionel).
-    Decliner -> statut "Reportee" (refus HSE)."""
+    Le bouton "Verifier" ouvre une checklist HSE obligatoire ; l'autorisation
+    n'est possible que si tous les controles sont coches.
+      Autoriser -> statut "En cours" (declenche le pop-up feu vert chez Lionel).
+      Decliner  -> statut "Reportee" (refus HSE)."""
     a_valider = _interventions(statut="Planifiée", machine=machine)
     st.markdown("#### 🛡️ Interventions à valider (HSE)")
     if not a_valider:
         st.info("Aucune intervention en attente de validation HSE.")
         return
 
-    widths = [3.4, 1.0, 1.9, 2.0, 1.3, 1.4]
+    widths = [3.6, 1.0, 1.9, 2.0, 1.3, 1.4]
     header = st.columns(widths)
     for col, label in zip(header, ["Intervention", "Machine", "Technicien",
                                    "Type", "Priorité", "Action"]):
@@ -166,26 +168,62 @@ def liste_validation_leila(machine=None):
         c[2].write(str(interv.get("technicien")) if interv.get("technicien") else "-")
         c[3].write(str(interv.get("type", "-")))
         c[4].write(str(interv.get("priorite")) if interv.get("priorite") else "-")
-        act = c[5].columns(2)
-        if act[0].button("✅", key="hse_ok_" + str(iid), help="Valider (feu vert HSE)"):
+        if c[5].button("🔍 Vérifier", key="hse_check_" + str(iid)):
+            st.session_state["_leila_verif"] = iid
+            st.rerun()
+    st.divider()
+
+    # ── Checklist HSE obligatoire (dialog) ─────────────────────────────────────
+    vid = st.session_state.get("_leila_verif")
+    if not vid:
+        return
+    interv = next((i for i in a_valider if i.get("id") == vid), None)
+    if interv is None:
+        st.session_state.pop("_leila_verif", None)
+        return
+    if not _HAS_DIALOG:
+        return
+
+    @st.dialog("Contrôle HSE avant autorisation")
+    def _dlg():
+        st.markdown("**" + str(interv.get("titre", "Intervention")) + "** — "
+                    + str(interv.get("machine", "-")))
+        hab = interv.get("habilitations")
+        if hab:
+            st.caption("Habilitation requise : "
+                       + (", ".join(hab) if isinstance(hab, list) else str(hab)))
+        st.markdown("Contrôles obligatoires avant intervention :")
+        c1 = st.checkbox("EPI adaptés portés", key="epi_a_" + str(vid))
+        c2 = st.checkbox("Consignation électrique (LOTO)", key="epi_b_" + str(vid))
+        c3 = st.checkbox("Circuit purgé / pression contrôlée", key="epi_c_" + str(vid))
+        c4 = st.checkbox("Habilitation du technicien vérifiée", key="epi_d_" + str(vid))
+        tous = c1 and c2 and c3 and c4
+        if not tous:
+            st.warning("Coche les 4 contrôles pour pouvoir autoriser l'intervention.")
+        if st.button("✅ AUTORISER L'INTERVENTION", disabled=not tous,
+                     type="primary", use_container_width=True, key="auth_" + str(vid)):
             try:
                 nc.set_statut_intervention(
-                    iid, "En cours",
-                    note="Autorisée HSE (EPI, consignation, habilitation) - écart HSE : 0")
+                    vid, "En cours",
+                    note="Autorisée HSE — EPI, consignation, pression, habilitation vérifiés — écart HSE : 0")
+                st.session_state.pop("_leila_verif", None)
                 st.success("Intervention autorisée — envoyée à Lionel.")
                 st.rerun()
             except Exception as e:
                 st.error("Échec Notion : " + str(e))
-        if act[1].button("✖", key="hse_no_" + str(iid), help="Décliner (refus HSE)"):
+        if st.button("✖ Décliner (sécurité non réunie)", use_container_width=True,
+                     key="decl_" + str(vid)):
             try:
                 nc.set_statut_intervention(
-                    iid, "Reportée",
+                    vid, "Reportée",
                     note="Refusée par la HSE - conditions de sécurité non réunies.")
+                st.session_state.pop("_leila_verif", None)
                 st.warning("Intervention refusée (reportée).")
                 st.rerun()
             except Exception as e:
                 st.error("Échec Notion : " + str(e))
-    st.divider()
+
+    _dlg()
 
 def banniere_sophie_cloture(machine="P-17"):
     """Banniere chez Sophie quand une intervention est cloturee (Réalisée)."""
