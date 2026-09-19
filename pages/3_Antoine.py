@@ -287,6 +287,26 @@ with tab2:
                  "évalués sur un horizon plus court."
         )
 
+        st.caption(
+            "**CAPEX complet du remplacement** — au-delà du seul prix d'achat :"
+        )
+        col_install, col_formation, col_revente = st.columns(3)
+        duree_install_input = col_install.number_input(
+            "Durée d'installation (h)", min_value=0.0, max_value=200.0,
+            value=8.0, step=1.0, key="antoine_duree_installation",
+            help="Durée d'arrêt de production pour installer le remplacement. "
+                 "Multipliée par le coût d'arrêt horaire réel des OF sur cet équipement."
+        )
+        formation_input = col_formation.number_input(
+            "Coût formation (€)", min_value=0, max_value=50000,
+            value=2000, step=500, key="antoine_cout_formation"
+        )
+        revente_input = col_revente.number_input(
+            "Valeur revente ancienne machine (€)", min_value=0, max_value=50000,
+            value=5000, step=500, key="antoine_valeur_revente",
+            help="Déduite du CAPEX net du scénario C."
+        )
+
     if st.button("▶️ Lancer la simulation", use_container_width=True, key="btn_lancer_simulation"):
         st.session_state.running = False
         with st.spinner("L'agent Antoine interroge le parc machines et simule les scénarios…"):
@@ -300,6 +320,9 @@ with tab2:
                     equipement="Pompe P-17", c_rul=int(c_rul),
                     taux_actualisation=taux_pct_input / 100,
                     duree_vie_remplacement_ans=int(duree_vie_input),
+                    duree_installation_h=duree_install_input,
+                    cout_formation_eur=formation_input,
+                    valeur_revente_eur=revente_input,
                 )
                 st.session_state.antoine_result    = result
                 st.session_state.antoine_pdf_bytes = None  # reset PDF
