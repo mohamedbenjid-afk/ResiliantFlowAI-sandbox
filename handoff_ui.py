@@ -34,9 +34,12 @@ def _tri_urgence(i):
             str(i.get("date") or "9999-12-31"))
 
 
-def _table_interv_lionel(rows, avec_action=False):
-    widths = [3.6, 1.0, 2.0, 1.4, 1.3] + ([1.4] if avec_action else [])
-    labels = ["Intervention", "Machine", "Type", "Priorité", "Date"] + (["Action"] if avec_action else [])
+def _table_interv_lionel(rows, actionnable=False):
+    """Tableau compact d'interventions. Si actionnable, un bouton 'Traiter'
+    selectionne l'intervention (ouvre le panneau consigne/CR sur la page)."""
+    widths = [3.4, 1.0, 1.9, 1.3, 1.2, 1.5]
+    labels = ["Intervention", "Machine", "Type", "Priorité", "Date",
+              "Action" if actionnable else "Statut"]
     header = st.columns(widths)
     for col, label in zip(header, labels):
         col.markdown("**" + label + "**")
@@ -50,21 +53,19 @@ def _table_interv_lionel(rows, avec_action=False):
         c[2].write(str(i.get("type", "-")))
         c[3].write(str(i.get("priorite")) if i.get("priorite") else "-")
         c[4].write(str(i.get("date")) if i.get("date") else "-")
-        if avec_action:
-            if c[5].button("✅ Terminer", key="fin_" + str(iid)):
-                try:
-                    nc.set_statut_intervention(
-                        iid, "Réalisée",
-                        note="Intervention réalisée et clôturée par le technicien.")
-                    st.success("Intervention clôturée. Sophie en est notifiée.")
-                    st.rerun()
-                except Exception as e:
-                    st.error("Échec Notion : " + str(e))
+        if actionnable:
+            if c[5].button("▶️ Traiter", key="trait_" + str(iid), use_container_width=True):
+                st.session_state["intervention_active"] = i
+                st.rerun()
+        else:
+            c[5].caption("⏳ HSE")
 
 
 def tables_interventions_lionel(nom_technicien="Lionel"):
     """Deux listes triees par urgence (priorite puis date) : pretes a lancer
-    (validees HSE, statut En cours) et en attente HSE (statut Planifiee)."""
+    (validees HSE, statut En cours) et en attente HSE (statut Planifiee).
+    La consigne de l'agent est figee sur l'intervention des l'affectation ;
+    'Traiter' ouvre le panneau de consigne + compte-rendu plus bas sur la page."""
     def _miennes(statut):
         return sorted(
             [i for i in _interventions(statut=statut)
@@ -76,16 +77,50 @@ def tables_interventions_lionel(nom_technicien="Lionel"):
 
     st.markdown("#### ✅ Prêtes à lancer (validées HSE)")
     if pretes:
-        _table_interv_lionel(pretes, avec_action=True)
+        _table_interv_lionel(pretes, actionnable=True)
     else:
         st.caption("Aucune intervention validée par la HSE pour le moment.")
 
     st.markdown("#### ⏳ En attente de validation HSE")
     if attente:
-        _table_interv_lionel(attente, avec_action=False)
+        _table_interv_lionel(attente, actionnable=False)
     else:
         st.caption("Aucune intervention en attente de validation.")
     st.divider()
+
+
+
+# ── Prescription agent P-17 (generee a l'affectation, figee sur l'intervention) ─
+def _prescription_p17_fallback(c_temp, c_vib, c_pres, c_rul):
+    """Procedure corrective P-17 standard, utilisee si le LLM est indisponible."""
+    return (
+        "### 🔧 DÉCISION — Intervention corrective immédiate P-17\n\n"
+        "**Fenêtre :** sous 24 h (RUL estimé " + str(c_rul) + " j — seuil critique franchi)\n\n"
+        "**Diagnostic :** surchauffe (" + str(c_temp) + " °C) et vibration élevée ("
+        + str(c_vib) + " mm/s) → dégradation du roulement **6205-2RS** en fin de vie.\n\n"
+        "**Procédure (≈ 35 min) :**\n"
+        "1. Consigner (LOTO) : ouvrir le disjoncteur **Q-17A**\n"
+        "2. Isoler : fermer les vannes **V-17A** (amont) et **V-17B** (aval)\n"
+        "3. Purger le carter via le point **PT-17**\n"
+        "4. Remplacer le roulement **6205-2RS** (kit **B-07**)\n"
+        "5. Graisser **Mobilux EP2** — couple carter **45 N·m**\n"
+        "6. Redémarrer, vérifier **débit 45 m³/h** et **vibration < 1.5 mm/s**\n\n"
+        "**Sécurité :** gants + lunettes + chaussures S3, cadenas LOTO obligatoire."
+    )
+
+
+def generer_prescription_p17(c_temp, c_vib, c_pres, c_rul):
+    """Genere la recommandation de l'agent pour P-17 (surchauffe). Repli statique
+    si le LLM (1min.ai) est indisponible. Le texte retourne est destine a etre
+    ecrit sur l'intervention (Notion) au moment de l'affectation par Sophie."""
+    try:
+        from agents.agent_lionel import run_agent_lionel
+        txt = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
+        if txt and len(str(txt).strip()) > 40:
+            return str(txt)
+    except Exception:
+        pass
+    return _prescription_p17_fallback(c_temp, c_vib, c_pres, c_rul)
 
 
 

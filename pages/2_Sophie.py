@@ -495,6 +495,20 @@ with tab2:
             st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
             if st.button(btn_label, key=f"btn_affect_{nom_complet}", disabled=btn_disabled, use_container_width=True):
                 today   = datetime.date.today().isoformat()
+                # Pour P-17 : on fait tourner l'agent MAINTENANT et on FIGE sa
+                # recommandation sur l'intervention (champ Description Notion).
+                # Ainsi la consigne reste attachée à l'intervention côté Lionel,
+                # même en cas de surchauffe, et n'est pas perdue / régénérée.
+                _is_p17 = equipement_cible == "P-17"
+                if _is_p17:
+                    with st.spinner("🤖 L'agent prépare la recommandation d'intervention…"):
+                        _reco = handoff_ui.generer_prescription_p17(
+                            float(c_temp), float(c_vib), float(c_pres), int(c_rul))
+                    _desc = _reco
+                    _prio = "P1 - Critique" if r_status in ("Critique", "Alerte") else "P3 - Normale"
+                else:
+                    _desc = f"Affectation {type_intervention} sur {equipement_cible}"
+                    _prio = None
                 payload = {
                     "titre":         f"Intervention {equipement_cible} — {today}",
                     "machine":       equipement_cible,
@@ -504,13 +518,16 @@ with tab2:
                     "date":          today,
                     "date_realisee": None,
                     "duree_reelle":  0.0,
-                    "actions":       f"Affectation {type_intervention} sur {equipement_cible}",
+                    "description":   _desc,
+                    "actions":       _desc,
                     "pieces":        "",
                     "cause_racine":  "",
                     "cout":          0.0,
                     "rul_avant":     c_rul,
                     "observations":  f"Assigné par Sophie — RUL {c_rul}j",
                 }
+                if _prio:
+                    payload["priorite"] = _prio
                 try:
                     with st.spinner(f"Affectation de {nom_complet}…"):
                         nc.create_intervention(payload)

@@ -432,6 +432,14 @@ def get_metriques_roi() -> dict:
 
 # ── CRÉER UNE INTERVENTION (POST) ─────────────────────────────────────────────
 
+def _rt_chunks(text: str, size: int = 1900) -> list:
+    """Decoupe un texte en segments rich_text <= 2000 car. (limite Notion)."""
+    text = text or ""
+    if not text:
+        return [{"text": {"content": ""}}]
+    return [{"text": {"content": text[i:i + size]}} for i in range(0, len(text), size)]
+
+
 def create_intervention(data: dict) -> dict:
     """
     Crée un enregistrement dans le Plan de Maintenance Notion (base ESCP).
@@ -474,7 +482,7 @@ def create_intervention(data: dict) -> dict:
                 "rich_text": [{"text": {"content": data.get("technicien", "")}}]
             },
             "Description": {
-                "rich_text": [{"text": {"content": description_text}}]
+                "rich_text": _rt_chunks(description_text)
             },
             "Composants à remplacer": {
                 "rich_text": [{"text": {"content": data.get("composants", data.get("pieces", ""))}}]

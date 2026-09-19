@@ -214,8 +214,7 @@ def _hab_ok(interv, mes_hab):
 with tab_jour:
     st.subheader("☀️ Ma journée — Lionel · " + datetime.date.today().strftime("%d/%m/%Y"))
     st.caption("Ton poste de travail : ta charge du jour, tes interventions, la consigne de l'agent, ton compte-rendu.")
-    handoff_ui.tables_interventions_lionel()
-
+    # ── Chargement de mes interventions (Planifiée + En cours) ───────────────
     if "mes_interventions" not in st.session_state:
         st.session_state["mes_interventions"] = _charger_mes_interventions()
     _interv = sorted(st.session_state["mes_interventions"],
@@ -248,22 +247,6 @@ with tab_jour:
     _k5.metric("🎓 Habilitation", "OK" if _hab_manq == 0 else f"{_hab_manq} à vérifier",
                delta_color="off")
 
-    # ── Ma prochaine intervention (call to action) ───────────────────────────
-    if _interv:
-        _next = _interv[0]
-        with st.container(border=True):
-            _pc1, _pc2 = st.columns([4, 1])
-            with _pc1:
-                st.markdown(f"**▶️ Ta prochaine intervention · {_next.get('priorite','')}**")
-                st.markdown(f"### {_next.get('titre','')}")
-                _loto = str(_next.get("loto_requis", "")).lower().startswith("o")
-                st.caption(f"{_next.get('machine','?')} · {_next.get('type','?')} · "
-                           f"~{_next.get('duree_estimee','?')} h · {'🔒 LOTO' if _loto else 'sans LOTO'}"
-                           + ("" if _hab_ok(_next, _mes_hab) else " · ⚠️ habilitation à vérifier"))
-            with _pc2:
-                if st.button("🔧 Traiter", key="next_treat", use_container_width=True):
-                    st.session_state["intervention_active"] = _next
-
     st.divider()
 
     # ── Brief du matin (agent) ───────────────────────────────────────────────
@@ -287,24 +270,10 @@ with tab_jour:
 
     st.divider()
 
-    # ── Mes interventions — je traite ou je reporte ──────────────────────────
-    st.markdown("#### 🗂️ Mes interventions")
-    for _idx, _it in enumerate(_interv):
-        with st.container(border=True):
-            _c1, _c2, _c3 = st.columns([5, 2, 2])
-            _loto = str(_it.get("loto_requis", "")).lower().startswith("o")
-            _badges = ('🔒 LOTO' if _loto else 'sans LOTO')
-            if not _hab_ok(_it, _mes_hab):
-                _badges += " · ⚠️ habilitation"
-            _c1.markdown(
-                f"**{_it.get('titre','?')}**  \n"
-                f"{_it.get('machine','?')} · {_it.get('type','?')} · ~{_it.get('duree_estimee','?')} h · {_badges}"
-            )
-            _c2.markdown(f"**{_it.get('priorite','?')}**")
-            if _c3.button("Traiter", key=f"trait_{_idx}", use_container_width=True):
-                st.session_state["intervention_active"] = _it
-            if _c3.button("Reporter", key=f"rep_{_idx}", use_container_width=True):
-                st.info("Report transmis à Sophie (arbitrage).")
+    # ── Mes interventions : 2 listes triées (prêtes à lancer / en attente HSE) ─
+    # « Traiter » ouvre le panneau ci-dessous (consigne de l'agent figée à
+    # l'affectation + sécurité + compte-rendu). Source unique, pas de doublon.
+    handoff_ui.tables_interventions_lionel()
 
     # ── Panneau intervention sélectionnée : consigne + sécurité + CR ─────────
     _act = st.session_state.get("intervention_active")
@@ -324,9 +293,17 @@ with tab_jour:
         if not _hab_ok(_act, _mes_hab):
             st.warning("⚠️ Une habilitation requise ne figure pas sur ton profil — escalade à Sophie avant d'intervenir.")
 
-        # Consigne : agent live pour P-17, sinon procédure depuis les données Notion
-        st.markdown("**🤖 Consigne de l'agent**")
-        if _act.get("machine") == "P-17":
+        # Consigne de l'agent : FIGÉE sur l'intervention au moment de l'affectation
+        # (le champ Description de Notion contient la recommandation de l'agent).
+        # On ne régénère plus à la volée : la reco reste attachée à l'intervention.
+        st.markdown("**🤖 Consigne de l'agent** — figée à l'affectation")
+        _stored = (_act.get("description") or "").strip()
+        _is_reco = bool(_stored) and not _stored.lower().startswith("affectation") and _stored not in ("-", "—")
+        if _is_reco:
+            st.markdown(_stored)
+            _consigne = _stored
+        elif _act.get("machine") == "P-17":
+            # Repli (intervention créée avant la mise en place, ou reco absente)
             _ck = "_consigne_P17"
             if _ck not in st.session_state:
                 with st.spinner("🤖 L'agent prépare la consigne terrain…"):
@@ -335,9 +312,10 @@ with tab_jour:
                     except Exception:
                         st.session_state[_ck] = _fallback_reco_lionel(c_temp, c_vib, c_pres, c_rul)
             _consigne = st.session_state[_ck]
+            st.caption("_(reco non stockée sur l'intervention — régénérée en repli)_")
             st.markdown(_consigne)
         else:
-            _consigne = _act.get("description") or "Exécuter l'intervention planifiée selon la gamme."
+            _consigne = "Exécuter l'intervention planifiée selon la gamme."
             st.markdown("📋 **CONSIGNE —** " + _consigne)
             if _act.get("composants"):
                 st.markdown("🔩 **Pièces —** " + str(_act.get("composants")))
