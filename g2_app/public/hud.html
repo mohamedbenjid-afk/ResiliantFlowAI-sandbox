@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aperçu HUD — Lunettes Even G2 · ResilientFlow AI</title>
+<style>
+  :root{
+    --g2-green:#39ff8b;      /* vert phosphore G2 */
+    --g2-green-dim:#1f9d57;
+    --bg:#05070a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(circle at 50% 30%,#10161d 0%,#05070a 70%);
+    color:#c9d4e0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    min-height:100%;
+    display:flex;flex-direction:column;align-items:center;
+    padding:26px 16px 40px;
+  }
+  h1{font-size:15px;font-weight:600;letter-spacing:.5px;color:#8ba0b6;margin:0 0 4px}
+  .sub{font-size:12px;color:#5c6b7c;margin:0 0 22px}
+
+  /* ── Cadre lunettes ── */
+  .glasses{
+    position:relative;
+    width:760px;max-width:96vw;
+    filter:drop-shadow(0 18px 40px rgba(0,0,0,.6));
+  }
+  .frame{
+    border:3px solid #2b333d;
+    border-radius:26px;
+    background:linear-gradient(180deg,#0c1116,#070a0e);
+    padding:22px 22px 18px;
+  }
+  .temples{display:flex;justify-content:space-between;margin-bottom:14px}
+  .temple-btn{
+    appearance:none;border:1px solid #2f6b4a;background:#0e1a13;color:var(--g2-green);
+    font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:600;
+    padding:8px 14px;border-radius:10px;cursor:pointer;letter-spacing:.4px;
+    transition:background .15s,transform .05s;
+  }
+  .temple-btn:hover{background:#12281c}
+  .temple-btn:active{transform:translateY(1px)}
+  .temple-lbl{font-size:10px;color:#5c6b7c;text-align:center;margin-top:5px;letter-spacing:.3px}
+
+  /* ── Écran HUD 576x288 (ratio 2:1) ── */
+  .hud{
+    aspect-ratio:576 / 288;width:100%;
+    background:#000;border-radius:12px;
+    border:1px solid #10241a;
+    box-shadow:inset 0 0 60px rgba(57,255,139,.05);
+    padding:18px 22px;overflow:hidden;position:relative;
+  }
+  .hud::after{ /* effet scanlines léger */
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(0deg,rgba(57,255,139,.035) 0 1px,transparent 1px 3px);
+    mix-blend-mode:screen;
+  }
+  pre#screen{
+    margin:0;color:var(--g2-green);
+    font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    font-size:15px;line-height:1.32;letter-spacing:.5px;
+    text-shadow:0 0 6px rgba(57,255,139,.55);
+    white-space:pre;
+  }
+  /* couleurs de statut appliquées à l'écran entier */
+  .hud.alerte pre#screen{color:#ffd23f;text-shadow:0 0 6px rgba(255,210,63,.5)}
+  .hud.critique pre#screen{color:#ff5c5c;text-shadow:0 0 7px rgba(255,92,92,.55);animation:blink 1.1s steps(1) infinite}
+  @keyframes blink{50%{opacity:.55}}
+
+  .statusbar{display:flex;gap:18px;align-items:center;margin-top:18px;font-size:12px;color:#6b7a8b}
+  .dot{width:9px;height:9px;border-radius:50%;background:#39ff8b;box-shadow:0 0 8px #39ff8b}
+  .dot.alerte{background:#ffd23f;box-shadow:0 0 8px #ffd23f}
+  .dot.critique{background:#ff5c5c;box-shadow:0 0 8px #ff5c5c}
+  .pill{margin-left:auto;font-family:ui-monospace,monospace;color:#8ba0b6}
+  a.ctrl{color:var(--g2-green);text-decoration:none;border-bottom:1px dotted var(--g2-green-dim)}
+</style>
+</head>
+<body>
+  <h1>Aperçu HUD — Lunettes Even Realities G2</h1>
+  <p class="sub">Reflet exact de ce qu'affichent les verres · source live <code>/api/rul</code> + agent Lionel · pilotable depuis la <a class="ctrl" href="http://localhost:8000/control" target="_blank">télécommande</a></p>
+
+  <div class="glasses">
+    <div class="frame">
+      <div class="temples">
+        <div>
+          <button class="temple-btn" id="btnLeft">◁ Tempe gauche</button>
+          <div class="temple-lbl">Vue suivante</div>
+        </div>
+        <div style="text-align:right">
+          <button class="temple-btn" id="btnRight">Tempe droite ▷</button>
+          <div class="temple-lbl">Rafraîchir</div>
+        </div>
+      </div>
+      <div class="hud" id="hud">
+        <pre id="screen">Connexion...</pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="statusbar" style="width:760px;max-width:96vw">
+    <span class="dot" id="dot"></span>
+    <span id="statusText">En attente de l'API…</span>
+    <span class="pill" id="pill">localhost:8000</span>
+  </div>
+
+<script>
+// Aperçu HUD fidèle — réplique de src/main.ts (vues Résumé / Détail / Prescription)
+const API = '/rul-api';            // proxy Vite → localhost:8000 (même origine, pas de CORS)
+const REFRESH_MS = 3000;
+const SEP_H = '━'.repeat(34);
+const SEP_L = '─'.repeat(34);
+
+let currentView = 0;   // 0=résumé, 1=détail, 2..N=prescription
+let prescPages = [];
+let lastLive = null;
+let agentFetched = false;
+
+function statusIcon(s){
+  if(s==='Critique') return '!! CRITIQUE !!';
+  if(s==='Alerte')   return '▲  ALERTE';
+  return '●  NOMINAL';
+}
+function hhmm(){ return new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}); }
+function totalViews(){ return 2 + prescPages.length; }
+
+function buildSummary(l){
+  const lines=[SEP_H,`  RUL PULSE -- ${l.machine_id}`,SEP_H,
+    `  STATUT  : ${statusIcon(l.statut)}`,
+    `  RUL     : ${l.rul_jours} jours`,
+    `  UNITE   : Unite B`, SEP_L];
+  lines.push(l.statut!=='Nominal' ? `  [<] Details+Prescr.  [>] Refresh` : `  [<] Details   [>] Refresh`);
+  lines.push(`  Vue 1/${totalViews()}  MAJ: ${hhmm()}`);
+  lines.push(SEP_H);
+  return lines.join('\n');
+}
+function buildDetail(l){
+  return [SEP_H,`  DETAIL -- ${l.machine_id}`,SEP_H,
+    `  STATUT  : ${statusIcon(l.statut)}`,
+    `  RUL     : ${l.rul_jours} jours`, SEP_L,
+    `  TEMP    : ${l.temperature} C`,
+    `  VIB     : ${l.vibration} mm/s`,
+    `  PRES    : ${l.pression} bar`, SEP_L,
+    `  T MAX   : 70 C`,
+    `  VIB MAX : 1.5 mm/s`, SEP_L,
+    `  Vue 2/${totalViews()}  [<] Suite  [>] Refresh`, SEP_H].join('\n');
+}
+function buildPresc(i){
+  const viewNum = 3 + i;
+  const content = prescPages[i] ?? '(vide)';
+  return [SEP_H,`  PRESCRIPTION LIONEL  (p.${i+1}/${prescPages.length})`,SEP_H,
+    content, SEP_L,
+    `  Vue ${viewNum}/${totalViews()}  [<] Suite  [>] Refresh`, SEP_H].join('\n');
+}
+function buildLoadingAgent(){
+  return [SEP_H,'  PRESCRIPTION LIONEL',SEP_H,'','  Agent IA en cours...','  (peut prendre 10-30s)','',SEP_H].join('\n');
+}
+
+function viewContent(){
+  if(!lastLive) return 'Connexion...';
+  if(currentView===0) return buildSummary(lastLive);
+  if(currentView===1) return buildDetail(lastLive);
+  if(prescPages.length===0) return buildLoadingAgent();
+  return buildPresc(currentView-2);
+}
+
+function render(){
+  const hud = document.getElementById('hud');
+  const screen = document.getElementById('screen');
+  const dot = document.getElementById('dot');
+  screen.textContent = viewContent();
+  const st = lastLive ? lastLive.statut : 'Nominal';
+  hud.className = 'hud' + (st==='Critique'?' critique':st==='Alerte'?' alerte':'');
+  dot.className = 'dot' + (st==='Critique'?' critique':st==='Alerte'?' alerte':'');
+}
+
+async function loadPrescription(){
+  try{
+    const r = await fetch(`${API}/api/agent`).then(r=>r.json());
+    if(r.status==='loading'){ setTimeout(loadPrescription,4000); if(currentView>=2) render(); return; }
+    if(r.status==='nominal'){ prescPages=[]; return; }
+    if(r.pages && r.pages.length){ prescPages=r.pages; agentFetched=true; render(); }
+  }catch(e){/* silencieux */}
+}
+
+async function refresh(){
+  const statusText=document.getElementById('statusText');
+  const pill=document.getElementById('pill');
+  try{
+    const l = await fetch(`${API}/api/rul`).then(r=>r.json());
+    lastLive = l;
+    if(l.statut!=='Nominal' && !agentFetched){ loadPrescription(); }
+    if(l.statut==='Nominal'){ agentFetched=false; prescPages=[]; if(currentView>=2) currentView=0; }
+    render();
+    statusText.textContent = `${l.scenario_label} · RUL ${l.rul_jours} j · ${l.statut}`;
+    pill.textContent = `tick ${l.tick} · MAJ ${hhmm()}`;
+  }catch(e){
+    statusText.textContent = 'API injoignable — lance lancer_api_rul.command';
+  }
+}
+
+document.getElementById('btnLeft').onclick = ()=>{ currentView=(currentView+1)%totalViews(); render(); };
+document.getElementById('btnRight').onclick = ()=> refresh();
+
+refresh();
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>

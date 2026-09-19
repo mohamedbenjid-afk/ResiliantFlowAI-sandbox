@@ -1,0 +1,9 @@
+{
+  "appId": "com.resilientflow.g2.rulpulse",
+  "appName": "RUL Pulse",
+  "version": "1.0.0",
+  "description": "Surveillance temps réel de la Pompe P-17 — ResilientFlow AI",
+  "author": "Mohamed Benjid — ESCP",
+  "permissions": [],
+  "entry": "index.html"
+}

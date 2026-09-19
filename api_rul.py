@@ -141,8 +141,20 @@ def _generate_prescription(scenario_key: str, live: dict) -> None:
         _prescription_cache["pages"]    = _paginate(plain)
         _prescription_cache["scenario"] = scenario_key
     except Exception as exc:
+        # LLM indisponible (ex: cle 1min.ai absente) -> on affiche quand meme la
+        # procedure P-17 standard sur les lunettes, au lieu d'un message d'erreur.
         _prescription_cache["error"] = str(exc)
-        _prescription_cache["pages"] = [f"Erreur agent: {str(exc)[:80]}"]
+        fallback = (
+            "Consigner (LOTO): disjoncteur Q-17A\n"
+            "Isoler vannes V-17A / V-17B\n"
+            "Purger circuit (point PT-17)\n"
+            "Remplacer roulement 6205-2RS (kit B-07)\n"
+            "Graisser Mobilux EP2 (couple 45 N.m)\n"
+            "Redemarrer: debit 45 m3/h, vib < 1.5 mm/s"
+        )
+        _prescription_cache["raw"]      = fallback
+        _prescription_cache["pages"]    = _paginate(fallback)
+        _prescription_cache["scenario"] = scenario_key
     finally:
         _prescription_cache["loading"] = False
 

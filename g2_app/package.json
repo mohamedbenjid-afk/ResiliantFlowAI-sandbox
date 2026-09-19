@@ -1,0 +1,22 @@
+{
+  "name": "resilientflow-g2",
+  "version": "1.0.0",
+  "description": "ResilientFlow AI — Widget RUL Pulse pour Even Realities G2",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "simulator": "evenhub-simulator http://localhost:5174"
+  },
+  "dependencies": {
+    "@evenrealities/even_hub_sdk": "^0.0.9"
+  },
+  "devDependencies": {
+    "@evenrealities/evenhub-cli": "^0.1.11",
+    "@evenrealities/evenhub-simulator": "^0.6.2",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.3",
+    "vite": "^8.0.4"
+  }
+}
