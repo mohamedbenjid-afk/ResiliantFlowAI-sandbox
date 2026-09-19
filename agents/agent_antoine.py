@@ -382,11 +382,14 @@ def simuler_scenarios_investissement(
     horizon_ans: int = 3,
     taux_actualisation: float = 0.05,
     duree_vie_remplacement_ans: int = 12,
+    duree_installation_h: float = 8,
+    cout_formation_eur: float = 2000,
+    valeur_revente_eur: float = 5000,
 ) -> dict:
     """
     Scénario A — Correctif pur : pannes au rythme historique, coûts croissants
     Scénario B — Maintien prescriptif : approche ResilientFlow actuelle
-    Scénario C — Remplacement maintenant : CAPEX immédiat + maintenance résiduelle faible
+    Scénario C — Remplacement maintenant : CAPEX complet + maintenance résiduelle faible
 
     Correctif (revue Antoine) :
       - taux_actualisation est désormais un paramètre pilotable depuis l'UI
@@ -402,9 +405,18 @@ def simuler_scenarios_investissement(
         pour chaque scénario — méthode standard pour comparer des options
         d'investissement à durées de vie différentes — et c'est le CAE qui
         détermine la recommandation, pas la NPV brute.
+      - Le CAPEX de remplacement ne se limitait qu'au prix d'achat
+        (cout_remplacement_eur). Il inclut désormais :
+          • le coût d'arrêt de production PENDANT l'installation (calculé à
+            partir du coût d'arrêt horaire réel des OF sur cet équipement,
+            via get_exposition_financiere_production — pas une estimation
+            en l'air), pour duree_installation_h heures ;
+          • le coût de formation des techniciens sur le nouvel équipement ;
+          • déduit de la valeur de revente/casse de l'ancienne machine.
     """
     hist  = get_historique_couts_maintenance(equipement)
     bilan = get_bilan_equipement(equipement)
+    exposition = get_exposition_financiere_production(equipement)
 
     pannes = [i for i in hist["detail_interventions"]
               if i["type"] == "Corrective" and i["statut"] == "Réalisée"]
@@ -418,6 +430,20 @@ def simuler_scenarios_investissement(
     cout_prescriptif_annuel = (
         sum(p["cout_eur"] for p in presc) if presc else 3500
     )
+
+    # Coût d'arrêt horaire réel moyen (depuis les OF impactés) pour chiffrer
+    # l'arrêt de production pendant l'installation du remplacement — plutôt
+    # qu'un chiffre arbitraire déconnecté des données de production réelles.
+    couts_horaires = [o["cout_arret_eur"] for o in exposition.get("of_impactes", [])
+                      if o.get("cout_arret_eur")]
+    cout_arret_horaire_moyen = (sum(couts_horaires) / len(couts_horaires)
+                                if couts_horaires else 500)  # fallback si aucun OF actif
+    cout_arret_installation_eur = round(duree_installation_h * cout_arret_horaire_moyen, 0)
+
+    # CAPEX complet du remplacement : achat + arrêt installation + formation
+    # - valeur de revente de l'ancienne machine
+    capex_complet_eur = (cout_remplacement_eur + cout_arret_installation_eur
+                         + cout_formation_eur - valeur_revente_eur)
 
     mtbf         = hist.get("mtbf_jours") or 180
     pannes_par_an_correctif   = round(365 / mtbf, 2)
@@ -446,8 +472,10 @@ def simuler_scenarios_investissement(
             for y in range(1, horizon_ans + 1)]
     cf_b = [-(cout_prescriptif_annuel * (1.03 ** y) + pannes_par_an_prescriptif * cout_panne_moyen)
             for y in range(1, horizon_ans + 1)]
-    # C : évalué sur sa propre durée de vie réaliste, pas sur horizon_ans
-    cf_c = [-cout_remplacement_eur] + [-1500] * duree_vie_remplacement_ans
+    # C : évalué sur sa propre durée de vie réaliste, pas sur horizon_ans.
+    # CAPEX initial = coût complet (achat + arrêt installation + formation
+    # - revente), pas seulement le prix d'achat.
+    cf_c = [-capex_complet_eur] + [-1500] * duree_vie_remplacement_ans
 
     npv_a = npv(cf_a)
     npv_b = npv(cf_b)
@@ -471,9 +499,12 @@ def simuler_scenarios_investissement(
     )[0]
 
     # Point mort : économie annuelle réelle = différence de CAE (et non plus
-    # une différence de coût total sur des durées non comparables).
+    # une différence de coût total sur des durées non comparables). Basé sur
+    # le CAPEX complet (achat + installation + formation - revente), pas
+    # seulement le prix d'achat, pour rester cohérent avec le décaissement
+    # réel du scénario C.
     eco_annuelle = eac_a - eac_c
-    payback_mois = round((cout_remplacement_eur / eco_annuelle) * 12, 1) if eco_annuelle > 0 else None
+    payback_mois = round((capex_complet_eur / eco_annuelle) * 12, 1) if eco_annuelle > 0 else None
 
     return {
         "equipement":    equipement,
@@ -486,6 +517,10 @@ def simuler_scenarios_investissement(
             "pannes_par_an_avec_prescriptif": pannes_par_an_prescriptif,
             "cout_prescriptif_annuel_eur":    round(cout_prescriptif_annuel, 0),
             "cout_remplacement_eur":          cout_remplacement_eur,
+            "cout_arret_installation_eur":    cout_arret_installation_eur,
+            "cout_formation_eur":             cout_formation_eur,
+            "valeur_revente_eur":             valeur_revente_eur,
+            "capex_complet_eur":              round(capex_complet_eur, 0),
         },
         "scenarios": {
             "A_correctif_pur": {
@@ -505,8 +540,11 @@ def simuler_scenarios_investissement(
                 "duree_annees":            horizon_ans,
             },
             "C_remplacement": {
-                "description":             f"Remplacement immédiat — CAPEX {_fmt(cout_remplacement_eur)} € "
-                                            f"(amorti sur {duree_vie_remplacement_ans} ans)",
+                "description":             f"CAPEX complet {_fmt(capex_complet_eur)} € "
+                                            f"(achat {_fmt(cout_remplacement_eur)} € + arrêt install. "
+                                            f"{_fmt(cout_arret_installation_eur)} € + formation "
+                                            f"{_fmt(cout_formation_eur)} € - revente {_fmt(valeur_revente_eur)} €), "
+                                            f"amorti sur {duree_vie_remplacement_ans} ans",
                 "cashflows_annuels_eur":   [round(c, 0) for c in cf_c],
                 "cout_total_eur":          round(cout_total_c, 0),
                 "npv_eur":                 round(npv_c, 0),
@@ -550,7 +588,7 @@ TOOLS = [
     },
     {
         "name": "simuler_scenarios_investissement",
-        "description": "Simule 3 scénarios : A) correctif pur, B) maintien prescriptif (sur horizon_ans), C) remplacement (sur sa propre durée de vie). Calcule NPV, coût annuel équivalent (CAE), point mort et recommandation optimale basée sur le CAE.",
+        "description": "Simule 3 scénarios : A) correctif pur, B) maintien prescriptif (sur horizon_ans), C) remplacement (CAPEX complet incluant arrêt installation + formation - revente, sur sa propre durée de vie). Calcule NPV, coût annuel équivalent (CAE), point mort et recommandation optimale basée sur le CAE.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -559,6 +597,9 @@ TOOLS = [
                 "horizon_ans":                 {"type": "integer"},
                 "taux_actualisation":          {"type": "number", "description": "Taux d'actualisation en décimal, ex: 0.08 pour 8%"},
                 "duree_vie_remplacement_ans":  {"type": "integer", "description": "Durée de vie attendue de l'équipement neuf, ex: 12"},
+                "duree_installation_h":        {"type": "number", "description": "Durée d'arrêt de production pour installer le remplacement, en heures"},
+                "cout_formation_eur":          {"type": "number", "description": "Coût de formation des techniciens sur le nouvel équipement"},
+                "valeur_revente_eur":          {"type": "number", "description": "Valeur de revente/casse de l'ancienne machine"},
             },
             "required": ["equipement"]
         }
@@ -579,6 +620,9 @@ def _execute(name, inputs):
             horizon_ans=inputs.get("horizon_ans", 3),
             taux_actualisation=inputs.get("taux_actualisation", 0.05),
             duree_vie_remplacement_ans=inputs.get("duree_vie_remplacement_ans", 12),
+            duree_installation_h=inputs.get("duree_installation_h", 8),
+            cout_formation_eur=inputs.get("cout_formation_eur", 2000),
+            valeur_revente_eur=inputs.get("valeur_revente_eur", 5000),
         )
     return {"erreur": f"Outil inconnu : {name}"}
 
@@ -614,7 +658,10 @@ ci-dessous plutôt que de reformater les chiffres à ta façon.
 # ── FONCTION PRINCIPALE ────────────────────────────────────────────────────────
 def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None,
                       horizon_ans: int = 3, taux_actualisation: float = 0.05,
-                      duree_vie_remplacement_ans: int = 12) -> dict:
+                      duree_vie_remplacement_ans: int = 12,
+                      duree_installation_h: float = 8,
+                      cout_formation_eur: float = 2000,
+                      valeur_revente_eur: float = 5000) -> dict:
     """
     Lance l'agent Antoine.
 
@@ -624,6 +671,11 @@ def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None,
       taux_actualisation         : coût du capital / WACC en décimal (défaut 0.05 = 5%)
       duree_vie_remplacement_ans : durée de vie attendue de l'équipement neuf
                                     pour le scénario C (défaut 12 ans)
+      duree_installation_h       : durée d'arrêt de production pour installer
+                                    le remplacement, en heures (défaut 8h)
+      cout_formation_eur         : coût de formation des techniciens (défaut 2000€)
+      valeur_revente_eur         : valeur de revente/casse de l'ancienne machine
+                                    (défaut 5000€, réduit le CAPEX net)
 
     Stratégie : pré-fetch de toutes les données en Python, puis
     UN SEUL appel LLM pour rédiger l'analyse. Compatible 1min.ai et Anthropic.
@@ -644,7 +696,10 @@ def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None,
     raw_stock      = get_etat_stock_strategique(equipement)
     raw_scenarios  = simuler_scenarios_investissement(
         equipement, horizon_ans=horizon_ans, taux_actualisation=taux_actualisation,
-        duree_vie_remplacement_ans=duree_vie_remplacement_ans)
+        duree_vie_remplacement_ans=duree_vie_remplacement_ans,
+        duree_installation_h=duree_installation_h,
+        cout_formation_eur=cout_formation_eur,
+        valeur_revente_eur=valeur_revente_eur)
 
     # ── 2. Construire le contexte complet pour le LLM ─────────────────────────
     rul_info = f" | RUL capteur : {c_rul}j" if c_rul else ""
@@ -710,11 +765,18 @@ d'une pompe neuve). Comme les durées diffèrent, la NPV brute de C n'est PAS
 comparable directement à celle de A/B — utilise le Coût Annuel Équivalent (CAE)
 pour comparer les 3 options, c'est la colonne qui doit guider ta recommandation.
 
+Le CAPEX du scénario C n'est PAS que le prix d'achat — détail :
+- Prix d'achat : {_fmt(raw_scenarios.get('hypotheses', {}).get('cout_remplacement_eur', 85000))} €
+- Arrêt de production pendant l'installation : {_fmt(raw_scenarios.get('hypotheses', {}).get('cout_arret_installation_eur', 0))} €
+- Formation des techniciens : {_fmt(raw_scenarios.get('hypotheses', {}).get('cout_formation_eur', 0))} €
+- Valeur de revente de l'ancienne machine (déduite) : -{_fmt(raw_scenarios.get('hypotheses', {}).get('valeur_revente_eur', 0))} €
+- **CAPEX complet : {_fmt(raw_scenarios.get('hypotheses', {}).get('capex_complet_eur', 0))} €**
+
 | Scénario | Durée | Coût total | NPV | CAE (coût annuel équivalent) |
 |---|---|---|---|---|
 | A — Correctif pur | {raw_scenarios.get('horizon_ans', 3)} ans | {_fmt(a_cout)} € | {_fmt(a_npv)} € | {_fmt(a_eac)} €/an |
 | B — Maintien prescriptif | {raw_scenarios.get('horizon_ans', 3)} ans | {_fmt(b_cout)} € | {_fmt(b_npv)} € | {_fmt(b_eac)} €/an |
-| C — Remplacement ({_fmt(raw_scenarios.get('hypotheses', {}).get('cout_remplacement_eur', 85000))} € CAPEX) | {duree_c} ans | {_fmt(c_cout)} € | {_fmt(c_npv)} € | {_fmt(c_eac)} €/an |
+| C — Remplacement (CAPEX complet ci-dessus) | {duree_c} ans | {_fmt(c_cout)} € | {_fmt(c_npv)} € | {_fmt(c_eac)} €/an |
 Point mort C vs A (basé sur l'écart de CAE) : {payback_str} | Économie B vs A sur {raw_scenarios.get('horizon_ans', 3)} ans : {_fmt(eco)} €
 Recommandation financière (au CAE le plus bas) : {reco}
 """
