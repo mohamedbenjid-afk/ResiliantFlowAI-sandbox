@@ -118,21 +118,19 @@ _show_k2 = r_status in ("Alerte", "Critique")
 _labels = ["☀️ Ma journée", "📊 Mon poste", "📡 K0 — Surveillance", "📋 K1 — Briefing"]
 if _show_k2:
     _labels.append("🔧 K2 — Procédure 🔔")
-# K3 (Post-intervention) masqué : le compte-rendu se fait sur « Ma journée »
-_labels += ["⚖️ K4 — Arbitrage"]
-
+# K3 (Post-intervention) et K4 (Arbitrage) masqués : le CR se fait sur « Ma
+# journée », et l'arbitrage inter-interventions relève de Sophie, pas de Lionel.
 _tabs = st.tabs(_labels)
 tab_jour = _tabs[0]
 tab_dash = _tabs[1]
 tab0 = _tabs[2]
 tab1 = _tabs[3]
 tab3 = None  # onglet K3 masqué
+tab4 = None  # onglet K4 masqué
 if _show_k2:
     tab2 = _tabs[4]
-    tab4 = _tabs[5]
 else:
     tab2 = None
-    tab4 = _tabs[4]
 
 # ════════════════════════════════════════════════════════════════════════════════
 # ONGLET « ☀️ Ma journée » — brief matinal (agent) + choix traiter / reporter
