@@ -115,20 +115,20 @@ STATUS_BG    = {"Nominal": "#dcfce7", "Alerte": "#fef3c7", "Critique": "#fee2e2"
 
 # ── TABS — K2 « Procédure » visible uniquement en Alerte/Critique (surchauffe) ─
 _show_k2 = r_status in ("Alerte", "Critique")
-_labels = ["☀️ Ma journée", "📊 Mon poste", "📡 K0 — Surveillance", "📋 K1 — Briefing"]
+_labels = ["☀️ Ma journée", "📊 Mon poste", "📡 K0 — Surveillance"]
 if _show_k2:
     _labels.append("🔧 K2 — Procédure 🔔")
-# K3 (Post-intervention) et K4 (Arbitrage) masqués : le CR se fait sur « Ma
-# journée », et l'arbitrage inter-interventions relève de Sophie, pas de Lionel.
+# K1 (Briefing), K3 (Post-intervention) et K4 (Arbitrage) masqués : « Ma journée »
+# fait office de briefing, le CR s'y fait, et l'arbitrage relève de Sophie.
 _tabs = st.tabs(_labels)
 tab_jour = _tabs[0]
 tab_dash = _tabs[1]
 tab0 = _tabs[2]
-tab1 = _tabs[3]
+tab1 = None  # onglet K1 masqué
 tab3 = None  # onglet K3 masqué
 tab4 = None  # onglet K4 masqué
 if _show_k2:
-    tab2 = _tabs[4]
+    tab2 = _tabs[3]
 else:
     tab2 = None
 
