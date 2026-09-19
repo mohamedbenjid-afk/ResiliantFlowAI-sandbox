@@ -115,7 +115,7 @@ STATUS_BG    = {"Nominal": "#dcfce7", "Alerte": "#fef3c7", "Critique": "#fee2e2"
 
 # ── TABS — K2 « Procédure » visible uniquement en Alerte/Critique (surchauffe) ─
 _show_k2 = r_status in ("Alerte", "Critique")
-_labels = ["☀️ Ma journée", "📊 Mon poste", "📡 K0 — Surveillance", "📚 Historique"]
+_labels = ["☀️ Ma journée", "📊 Tableau de bord Machine", "📡 K0 — Surveillance", "📚 Historique"]
 if _show_k2:
     _labels.append("🔧 K2 — Procédure 🔔")
 # K1 (Briefing), K3 (Post-intervention) et K4 (Arbitrage) masqués : « Ma journée »
@@ -481,10 +481,10 @@ with tab_jour:
                 st.error("Écriture Notion échouée : " + str(_e)[:150])
 
 # ════════════════════════════════════════════════════════════════════════════════
-# ONGLET DASHBOARD — « Mon poste » (accueil)
+# ONGLET DASHBOARD — « Tableau de bord Machine »
 # ════════════════════════════════════════════════════════════════════════════════
 with tab_dash:
-    st.markdown("## 📊 Mon poste — Lionel Dumont")
+    st.markdown("## 📊 Tableau de bord Machine — Lionel Dumont")
     st.caption("Technicien terrain · Unité B · Vue parc — sélectionnez une machine")
 
     _MACHINES = ["P-17", "C-03", "M-08", "P-09", "V-12"]
