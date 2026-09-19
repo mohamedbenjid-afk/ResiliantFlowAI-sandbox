@@ -307,6 +307,21 @@ with tab2:
             help="Déduite du CAPEX net du scénario C."
         )
 
+        st.markdown("---")
+        arbitrage_actif = st.checkbox(
+            "🎯 Arbitrer entre plusieurs machines à risque avec un budget limité",
+            key="antoine_arbitrage_actif",
+            help="Simule le remplacement de CHAQUE machine Critique/Élevé du parc "
+                 "(pas seulement Pompe P-17) et priorise lesquelles remplacer en "
+                 "premier selon le budget disponible."
+        )
+        budget_input = None
+        if arbitrage_actif:
+            budget_input = st.number_input(
+                "Budget CAPEX disponible (€)", min_value=0, max_value=1000000,
+                value=100000, step=5000, key="antoine_budget_disponible"
+            )
+
     if st.button("▶️ Lancer la simulation", use_container_width=True, key="btn_lancer_simulation"):
         st.session_state.running = False
         with st.spinner("L'agent Antoine interroge le parc machines et simule les scénarios…"):
@@ -317,12 +332,13 @@ with tab2:
                 # temps réel (cf. BRIEFING), donc c_temp/c_vib/c_pres ne sont pas transmis
                 # à l'agent — ils restent affichés uniquement dans le simulateur capteurs.
                 result = run_agent_antoine(
-                    equipement="P-17", c_rul=int(c_rul),  # code machine reel (matche machines + historique)
+                    equipement="Pompe P-17", c_rul=int(c_rul),
                     taux_actualisation=taux_pct_input / 100,
                     duree_vie_remplacement_ans=int(duree_vie_input),
                     duree_installation_h=duree_install_input,
                     cout_formation_eur=formation_input,
                     valeur_revente_eur=revente_input,
+                    budget_disponible_eur=budget_input if arbitrage_actif else None,
                 )
                 st.session_state.antoine_result    = result
                 st.session_state.antoine_pdf_bytes = None  # reset PDF
@@ -452,6 +468,64 @@ with tab2:
                 f"✅ **Recommandation agent (au CAE le plus bas) :** {reco} — "
                 f"Économie annuelle vs correctif : **{_fmt_fr(eco_cae)} €/an**"
             )
+
+        # ── Arbitrage budgétaire multi-machines (result['arbitrage']) ─────────
+        arbitrage = result.get("arbitrage")
+        if arbitrage:
+            st.markdown("##### 🎯 Arbitrage budgétaire — priorisation multi-machines")
+            ab1, ab2, ab3, ab4 = st.columns(4)
+            _kpi_card(ab1, "Budget disponible",
+                      f"{_fmt_fr(arbitrage.get('budget_disponible_eur', 0))} €",
+                      border_color="#2563eb", bg_color="#dbeafe")          # bleu
+            _kpi_card(ab2, "Budget utilisé",
+                      f"{_fmt_fr(arbitrage.get('budget_utilise_eur', 0))} €",
+                      border_color="#7c3aed", bg_color="#ede9fe")          # violet
+            _kpi_card(ab3, "Machines retenues",
+                      f"{arbitrage.get('nb_machines_retenues', 0)} / {arbitrage.get('nb_machines_eligibles', 0)}",
+                      border_color="#16a34a", bg_color="#dcfce7")          # vert
+            _kpi_card(ab4, "Gain annuel total",
+                      f"{_fmt_fr(arbitrage.get('gain_annuel_total_eur', 0))} €/an",
+                      border_color="#b7410e", bg_color="#fbe4d8")          # orange brique
+
+            retenues = arbitrage.get("machines_retenues", [])
+            non_retenues = arbitrage.get("machines_non_retenues", [])
+
+            if retenues:
+                st.caption("✅ **Machines retenues** (par ordre de priorité — meilleur ratio gain/investissement d'abord) :")
+                df_retenues = pd.DataFrame([
+                    {
+                        "Machine":    f"{m['machine']} ({m['unite']})",
+                        "Niveau de risque": m.get("niveau_risque", "—"),
+                        "CAPEX (€)":  m["capex_complet_eur"],
+                        "Gain annuel (€/an)": m["gain_annuel_eur"],
+                        "Ratio (€ gagné / € investi)": m["ratio_gain_par_euro"],
+                    }
+                    for m in retenues
+                ])
+                st.dataframe(
+                    df_retenues.style.format({
+                        "CAPEX (€)":            lambda x: _fmt_fr(x),
+                        "Gain annuel (€/an)":   lambda x: _fmt_fr(x),
+                        "Ratio (€ gagné / € investi)": lambda x: _fmt_fr(x, 3),
+                    }),
+                    use_container_width=True, hide_index=True,
+                )
+
+            if non_retenues:
+                st.caption("⏳ **Machines non retenues** (budget insuffisant pour cette itération) :")
+                df_non_retenues = pd.DataFrame([
+                    {
+                        "Machine":    f"{m['machine']} ({m['unite']})",
+                        "Niveau de risque": m.get("niveau_risque", "—"),
+                        "CAPEX (€)":  m["capex_complet_eur"],
+                        "Raison":     m.get("raison_exclusion", "—"),
+                    }
+                    for m in non_retenues
+                ])
+                st.dataframe(
+                    df_non_retenues.style.format({"CAPEX (€)": lambda x: _fmt_fr(x)}),
+                    use_container_width=True, hide_index=True,
+                )
 
         # ── Analyse complète du LLM (result['analyse']) en markdown ──────────
         analyse = result.get("analyse", "")
