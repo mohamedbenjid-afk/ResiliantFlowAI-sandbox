@@ -101,12 +101,18 @@ def _extract_code(nom: str) -> str:
     return m.group(1) if m else nom
 
 
+def _is_doublon_machine(nom) -> bool:
+    """Ligne machine marquée comme doublon à supprimer (à exclure partout)."""
+    n = (nom or "").lower()
+    return ("doublon" in n) or ("supprimer" in n) or ("🗑" in nom)
+
+
 @st.cache_data(ttl=30)
 def get_machines(statut: str = None) -> list[dict]:
     """Toutes les machines, filtre optionnel par statut. Déduplique par code machine."""
     f = {"property": "Statut", "select": {"equals": statut}} if statut else None
     pages = _query_db(DB_IDS["machines"], f)
-    raw = [_parse_machine(p) for p in pages]
+    raw = [_parse_machine(p) for p in pages if not _is_doublon_machine(_prop(p, "Équipement"))]
     # Déduplication : garder une seule entrée par code machine (ex: P-17)
     # Priorité à l'entrée avec le RUL le plus bas (la plus critique)
     seen: dict[str, dict] = {}
@@ -131,9 +137,11 @@ def get_machine(machine_id: str) -> dict | None:
         DB_IDS["machines"],
         {"property": "Équipement", "title": {"contains": machine_id}}
     )
+    pages = [p for p in pages if not _is_doublon_machine(_prop(p, "Équipement"))]
     if not pages:
         return None
-    m = _parse_machine(pages[0])
+    _exact = [p for p in pages if _extract_code(_prop(p, "Équipement")) == machine_id]
+    m = _parse_machine(_exact[0] if _exact else pages[0])
     m["id"] = _extract_code(m["nom"])
     return m
 

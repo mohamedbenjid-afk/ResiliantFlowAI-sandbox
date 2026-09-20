@@ -51,11 +51,23 @@ def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None)
     return results
  
  
-# ── IDs des bases Notion ESCP (corrigés) ─────────────────────────────────────
-DB_ORDRES_FAB = "687e40c2-a3ff-4de0-be55-20cf411f5dd6"   # Ordres de fabrication
-DB_HISTORIQUE = "94babab5-03bb-4c4d-9053-08d5bff301e3"   # Historique & plan de maintenance
-DB_PIECES     = "ef896795-bd1a-4b20-a8ea-f121c9f846ff"   # Pièces détachées
-DB_EQUIPE     = "3856b2ff-be3d-8151-8b3f-ee79dee0bc2b"   # Équipe maintenance
+# ── IDs Notion — alignés sur les bases [SANDBOX] de notion_client (source unique)
+# NE PAS remettre d'IDs en dur : ils pointaient vers d'anciennes bases et
+# déconnectaient l'agent des vraies données sandbox.
+import re as _re
+from notion_client import DB_IDS as _DB_IDS
+DB_ORDRES_FAB = _DB_IDS["ordres_fab"]    # 📋 [SANDBOX] Ordres de Fabrication
+DB_HISTORIQUE = _DB_IDS["historique"]    # 🔩 [SANDBOX] Plan de Maintenance
+DB_PIECES     = _DB_IDS["pieces"]        # 📦 [SANDBOX] Stock Composants
+DB_EQUIPE     = _DB_IDS["equipe"]        # 👷 [SANDBOX] Équipe Maintenance RH
+
+
+def _extract_code(nom: str) -> str:
+    """Extrait le code machine (ex: 'P-17') depuis 'Pompe P-17'."""
+    if not nom:
+        return nom
+    m = _re.search(r'\b([A-Z]+-\d+)\b', nom)
+    return m.group(1) if m else nom
  
  
 # ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -204,10 +216,13 @@ TOOLS = [
  
  
 def _execute(name, inputs):
-    if name == "get_impact_production":           return get_impact_production(inputs["equipement"])
-    if name == "get_charge_techniciens":          return get_charge_techniciens(inputs["equipement"])
-    if name == "get_fenetre_maintenance":         return get_fenetre_maintenance(inputs["equipement"])
-    if name == "get_pieces_critiques_manquantes": return get_pieces_critiques_manquantes(inputs["equipement"])
+    # Normalise l'identifiant machine ("Pompe P-17" -> "P-17") : les bases
+    # stockent le code, pas le libellé complet.
+    eq = _extract_code(inputs.get("equipement", ""))
+    if name == "get_impact_production":           return get_impact_production(eq)
+    if name == "get_charge_techniciens":          return get_charge_techniciens(eq)
+    if name == "get_fenetre_maintenance":         return get_fenetre_maintenance(eq)
+    if name == "get_pieces_critiques_manquantes": return get_pieces_critiques_manquantes(eq)
     return {"erreur": f"Outil inconnu : {name}"}
  
  
