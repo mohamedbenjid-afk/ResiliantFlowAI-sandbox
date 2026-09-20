@@ -284,3 +284,32 @@ def chat(system: str, messages: list, tools: list = None,
     else:
         raw = _call_1minai(system, messages, tools)
     return LLMResponse(raw)
+
+
+# ── GARDE-FOUS PARTAGÉS (anti-fuite tool_call) ────────────────────────────────
+# L'API 1min.ai ne supporte pas nativement tool_use : le modèle "noie" parfois
+# un JSON {"tool_call": ...} dans le texte final. Ces helpers factorisent la
+# détection et l'appel LLM sans outils, réutilisés par les 4 agents.
+
+def est_reponse_propre(txt: str, min_len: int = 20) -> bool:
+    """Vrai si le texte est une vraie réponse (et non un artefact d'appel/résultat
+    d'outil laissé par le modèle)."""
+    if not txt or len(txt.strip()) < min_len:
+        return False
+    low = txt.strip().lower()
+    artefacts = ('"tool_call"', "'tool_call'", "[appel outil]", "[résultat outil]",
+                 '"arguments"', "get_fiche_equipement", "get_procedure")
+    if any(a in low for a in artefacts):
+        return False
+    if low[:1] in "{[":            # blob JSON
+        return False
+    return True
+
+
+def chat_sans_outils(system: str, user: str, max_tokens: int = 1200) -> str:
+    """Un seul appel LLM SANS outils (le plus fiable : pas de boucle tool_use).
+    Retourne le texte final, ou "" si la réponse est un artefact."""
+    resp = chat(system=system, messages=[{"role": "user", "content": user}],
+                tools=None, max_tokens=max_tokens)
+    txt = resp.final_text().strip()
+    return txt if est_reponse_propre(txt) else ""

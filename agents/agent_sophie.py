@@ -13,7 +13,9 @@ import requests as _requests
  
 import sys, os as _os
 sys.path.append(_os.path.join(_os.path.dirname(__file__), '..'))
-from llm_client import chat as _llm_chat
+from llm_client import chat as _llm_chat, chat_sans_outils
+import logging
+_log = logging.getLogger("resilientflow.agents")
  
  
 def _get_secret(key):
@@ -260,71 +262,49 @@ Factuel, orienté décision. Chiffre les risques financiers dès que possible.
 # ── FONCTION PRINCIPALE ───────────────────────────────────────────────────────
 def run_agent_sophie(c_rul: int, equipement: str = "Pompe P-17",
                      c_temp: float = None, c_vib: float = None) -> str:
-    """
-    Lance l'agent Sophie avec le RUL courant et le contexte machine.
-    Retourne l'arbitrage planification en texte Markdown.
-    """
+    """Lance l'agent Sophie : pré-fetch des faits (impact production, équipe,
+    pièces, fenêtres) injectés comme contexte, puis UN SEUL appel LLM pour
+    l'arbitrage (pas de boucle tool_use = pas de fuite tool_call). Repli propre
+    si le LLM est indisponible."""
+    code = _extract_code(equipement)
+
+    # ── Pré-fetch des faits réels (le LLM rédige, il n'invente pas) ────────────
+    impact  = get_impact_production(code)
+    equipe  = get_charge_techniciens(code)
+    pieces  = get_pieces_critiques_manquantes(code)
+    fenetre = get_fenetre_maintenance(code)
+
     details = ""
-    if c_temp: details += f"\n- Température : {c_temp:.1f}°C"
-    if c_vib:  details += f"\n- Vibration   : {c_vib:.2f} mm/s"
- 
-    situation = (
-        f"ALERTE MAINTENANCE — {equipement}\n"
-        f"- RUL estimé : {c_rul}j{details}\n\n"
-        f"Analyse l'impact production, la disponibilité des ressources "
-        f"et recommande la meilleure stratégie d'intervention."
+    if c_temp: details += f"\n- Température : {c_temp:.1f} °C"
+    if c_vib:  details += f"\n- Vibration : {c_vib:.2f} mm/s"
+
+    contexte = (
+        f"ALERTE MAINTENANCE — {equipement} (code {code})\n"
+        f"- RUL estimé : {c_rul} jours{details}\n\n"
+        f"IMPACT PRODUCTION (OF & coût d'arrêt) :\n"
+        f"{json.dumps(impact, ensure_ascii=False, indent=2)}\n\n"
+        f"ÉQUIPE MAINTENANCE (disponibilité / charge) :\n"
+        f"{json.dumps(equipe, ensure_ascii=False, indent=2)}\n\n"
+        f"PIÈCES CRITIQUES MANQUANTES :\n"
+        f"{json.dumps(pieces, ensure_ascii=False, indent=2)}\n\n"
+        f"FENÊTRES DE MAINTENANCE PLANIFIÉES :\n"
+        f"{json.dumps(fenetre, ensure_ascii=False, indent=2)}\n\n"
+        f"À partir de CES données uniquement, arbitre entre intervention immédiate "
+        f"et report, chiffre le risque (%) et l'impact (€), et recommande la "
+        f"meilleure stratégie au format demandé."
     )
- 
-    def _est_valide(texte: str) -> bool:
-        """Rejette les réponses où le modèle a recopié un fragment de format
-        interne (appel/résultat d'outil) au lieu de donner une vraie synthèse."""
-        if not texte or len(texte.strip()) < 20:
-            return False
-        artefacts = ("[appel outil]", "[résultat outil]", '"tool_call"')
-        return not any(a in texte.lower() for a in artefacts)
 
-    messages = [{"role": "user", "content": situation}]
-    max_iterations = 6
-    for _ in range(max_iterations):
-        resp = _llm_chat(system=SYSTEM, messages=messages, tools=TOOLS, max_tokens=2000)
-        if resp.stop_reason == "end_turn":
-            texte = resp.final_text()
-            if _est_valide(texte):
-                return texte
-            break  # réponse invalide : on passe directement au repli forcé
-        if resp.stop_reason == "tool_use":
-            results = []
-            for tc in resp.tool_calls():
-                out = _execute(tc["name"], tc["input"])
-                results.append({"type": "tool_result", "tool_use_id": tc.get("id", "tc0"),
-                                "content": json.dumps(out, ensure_ascii=False)})
-            messages.append({"role": "assistant", "content": resp.content})
-            messages.append({"role": "user",      "content": results})
-        else:
-            break
-
-    # Garde-fou : au-delà de max_iterations (ou réponse invalide/stop_reason
-    # inattendu), on force une synthèse finale sans outils plutôt que de
-    # laisser l'app tourner indéfiniment ou afficher un artefact de format.
-    messages.append({
-        "role": "user",
-        "content": (
-            "Tu as maintenant assez d'informations pour conclure. Réponds "
-            "directement avec ton analyse et ta recommandation au format "
-            "demandé, sans appeler d'autre outil et sans recopier "
-            "d'anciens appels ou résultats d'outils."
-        ),
-    })
-    resp = _llm_chat(system=SYSTEM, messages=messages, tools=None, max_tokens=2000)
-    texte_final = resp.final_text()
-    if _est_valide(texte_final):
-        return texte_final
+    texte = chat_sans_outils(system=SYSTEM, user=contexte, max_tokens=2000)
+    if texte:
+        _log.info("agent_sophie: reponse LLM (contexte pre-fetche)")
+        return texte
+    _log.warning("agent_sophie: LLM indisponible ou artefact -> repli")
     return (
-        "⚠️ L'agent n'a pas pu conclure son analyse dans le temps imparti. "
-        "Réessaie, ou consulte directement les onglets S0/S2 pour les données brutes."
+        "⚠️ L'agent n'a pas pu conclure son analyse. "
+        "Consulte les onglets S0 (alertes) et S2 (affectation) pour les données brutes."
     )
  
  
 # ── TEST STANDALONE ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print(run_agent_sophie(c_rul=18, equipement="Pompe P-17", c_temp=78.0, c_vib=5.8))
+    print(run_agent_sophie(c_rul=2, equipement="Pompe P-17", c_temp=82.0, c_vib=3.5))

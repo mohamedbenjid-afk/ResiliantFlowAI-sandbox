@@ -46,7 +46,9 @@ from datetime import datetime
 import requests as _requests
 import sys, os as _os
 sys.path.append(_os.path.join(_os.path.dirname(__file__), '..'))
-from llm_client import chat as _llm_chat
+from llm_client import chat as _llm_chat, est_reponse_propre
+import logging
+_log = logging.getLogger("resilientflow.agents")
 
 
 def _get_secret(key):
@@ -982,6 +984,10 @@ Recommandation financière (au CAE le plus bas) : {reco}
     # ── 3. Un seul appel LLM pour rédiger l'analyse ───────────────────────────
     resp    = _llm_chat(system=SYSTEM, messages=messages, max_tokens=2500)
     analyse = resp.final_text()
+    if est_reponse_propre(analyse, min_len=40):
+        _log.info("agent_antoine: analyse LLM generee")
+    else:
+        _log.warning("agent_antoine: reponse LLM vide ou artefact")
 
     return {
         "analyse":    analyse,

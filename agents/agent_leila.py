@@ -13,7 +13,9 @@ from datetime import date
 
 import sys, os as _os
 sys.path.append(_os.path.join(_os.path.dirname(__file__), '..'))
-from llm_client import chat as _llm_chat
+from llm_client import chat as _llm_chat, est_reponse_propre
+import logging
+_log = logging.getLogger("resilientflow.agents")
 
 # ── CLIENT NOTION PARTAGÉ ─────────────────────────────────────────────────────
 # CORRECTION : cet agent réimplémentait son propre mini-client Notion avec des
@@ -425,9 +427,10 @@ def run_agent_leila(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> s
         ),
     })
     resp = _llm_chat(system=SYSTEM, messages=messages, tools=None, max_tokens=2000)
+    _log.info("agent_leila: synthese finale (repli sans outils)")
     return f"{entete}\n\n{resp.final_text()}"
 
 
 # ── TEST STANDALONE ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print(run_agent_leila(c_temp=117.0, c_vib=5.8, c_pres=4.6, c_rul=12))
+    print(run_agent_leila(c_temp=82.0, c_vib=3.5, c_pres=4.6, c_rul=2))

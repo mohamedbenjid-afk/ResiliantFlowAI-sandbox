@@ -2,7 +2,9 @@ import os, json, re
 
 import sys as _sys, os as _os
 _sys.path.append(_os.path.join(_os.path.dirname(__file__), '..'))
-from llm_client import chat as _llm_chat
+from llm_client import chat as _llm_chat, chat_sans_outils, est_reponse_propre
+import logging
+_log = logging.getLogger("resilientflow.agents")
 
 # ── CLIENT NOTION PARTAGÉ ─────────────────────────────────────────────────────
 # CORRECTION (Lot B) : l'agent utilise désormais le client Notion partagé
@@ -204,10 +206,14 @@ def run_agent_lionel(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> 
     )
 
     messages = [{"role": "user", "content": situation}]
-    while True:
+    for _ in range(6):  # garde-fou : jamais de boucle infinie
         resp = _llm_chat(system=SYSTEM, messages=messages, tools=TOOLS, max_tokens=1500)
         if resp.stop_reason == "end_turn":
-            return resp.final_text()
+            txt = resp.final_text()
+            if est_reponse_propre(txt, min_len=40):
+                _log.info("agent_lionel: reponse LLM (avec outils)")
+                return txt
+            break  # artefact (tool_call noyé) -> repli sans outils
         if resp.stop_reason == "tool_use":
             results = []
             for tc in resp.tool_calls():
@@ -216,6 +222,20 @@ def run_agent_lionel(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> 
                                 "content": json.dumps(out, ensure_ascii=False)})
             messages.append({"role": "assistant", "content": resp.content})
             messages.append({"role": "user",      "content": results})
+        else:
+            break
+
+    # Repli : une synthèse directe sans outils (plus fiable). Si vide, l'appelant
+    # (handoff_ui.generer_prescription_p17) bascule sur la procédure statique P-17.
+    txt = chat_sans_outils(
+        system=SYSTEM,
+        user=situation + "\n\nConclus directement au format demandé, sans appeler d'outil.",
+        max_tokens=1200)
+    if txt:
+        _log.info("agent_lionel: reponse LLM (repli sans outils)")
+        return txt
+    _log.warning("agent_lionel: LLM indisponible -> repli statique cote appelant")
+    return ""
 
 
 # ── BRIEF DU MATIN ────────────────────────────────────────────────────────────

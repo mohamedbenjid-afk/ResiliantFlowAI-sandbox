@@ -153,7 +153,7 @@ st.sidebar.caption("Horodatage système : t = " + str(st.session_state.tick))
 
 # US-A0 : sidebar corrigée — RUL + statut sur une seule ligne, avec code couleur
 _sidebar_icon = {"Nominal": "🟢", "Alerte": "🟠", "Critique": "🔴"}.get(r_status, "⚪")
-st.sidebar.caption(f"{_sidebar_icon} RUL estimé : {c_rul}h — **{r_status}**")
+st.sidebar.caption(f"{_sidebar_icon} RUL estimé : {c_rul} j — **{r_status}**")
 
 st.sidebar.page_link("streamlit_home.py", label="⬅️ Retour à l'accueil", use_container_width=True)
 
@@ -166,7 +166,7 @@ if r_status in ("Alerte", "Critique"):
     _icon = "🔴" if r_status == "Critique" else "🟠"
     st.error(
         f"{_icon} **Alerte {r_status} — Pompe P-17 (Unité B)**  \n"
-        f"RUL restant : **{c_rul} h** ({rul_percentage:.0f}% de vie restante).  \n"
+        f"RUL restant : **{c_rul} j** ({rul_percentage:.0f}% de vie restante).  \n"
         f"**Impact estimé :** risque d'arrêt de production non planifié.  \n"
         f"**Recommandation :** lancer l'analyse stratégique (onglet 💰 Simulation Financière) "
         f"pour arbitrer entre maintenance corrective et remplacement."
@@ -247,7 +247,7 @@ with tab1:
         _icon = "🔴" if r_status == "Critique" else "🟠"
         st.error(
             f"{_icon} **{r_status} — Pompe P-17 (Unité B)**  \n"
-            f"RUL restant : **{c_rul} h** ({rul_percentage:.0f}% de vie restante).  \n"
+            f"RUL restant : **{c_rul} j** ({rul_percentage:.0f}% de vie restante).  \n"
             f"**Impact estimé :** risque d'arrêt de production non planifié, "
             f"immobilisation de la ligne concernée.  \n"
             f"**Recommandation :** prioriser une intervention prescriptive ou évaluer "
