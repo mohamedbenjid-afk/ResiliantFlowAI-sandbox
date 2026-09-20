@@ -6,7 +6,7 @@ import sys, os
 from datetime import datetime, date
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-from shared_state import init_session_state, update_sensors, COMMON_CSS
+from shared_state import init_session_state, update_sensors, COMMON_CSS, fusion_capteurs_partages
 import notion_client as nc
 
 
@@ -127,6 +127,8 @@ st.markdown(COMMON_CSS, unsafe_allow_html=True)
 # ── SESSION STATE & CAPTEURS ──────────────────────────────────────────────────
 init_session_state()
 c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_percentage = update_sensors()
+# État partagé : reflète la surchauffe déclenchée par Lionel (via Notion)
+c_temp, c_vib, c_pres, c_rul, r_status = fusion_capteurs_partages(c_temp, c_vib, c_pres, c_rul, r_status)
 
 # Initialisation session_state pour persister les résultats
 for key in ["antoine_result", "antoine_pdf_bytes", "antoine_pdf_ref"]:

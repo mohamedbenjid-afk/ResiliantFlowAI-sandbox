@@ -4,7 +4,7 @@ import sys, os
 from datetime import datetime, date
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-from shared_state import init_session_state, update_sensors, COMMON_CSS
+from shared_state import init_session_state, update_sensors, COMMON_CSS, fusion_capteurs_partages
 import handoff_ui
 
 # ── CONFIG PAGE ───────────────────────────────────────────────────────────────
@@ -14,6 +14,8 @@ st.markdown(COMMON_CSS, unsafe_allow_html=True)
 # ── SESSION STATE & CAPTEURS ──────────────────────────────────────────────────
 init_session_state()
 c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_percentage = update_sensors()
+# État partagé : reflète la surchauffe déclenchée par Lionel (via Notion)
+c_temp, c_vib, c_pres, c_rul, r_status = fusion_capteurs_partages(c_temp, c_vib, c_pres, c_rul, r_status)
 
 # ── SESSION STATE LEILA ───────────────────────────────────────────────────────
 for key in ["leila_result", "audit_pdf_bytes", "audit_pdf_ref", "audit_pdf_src"]:

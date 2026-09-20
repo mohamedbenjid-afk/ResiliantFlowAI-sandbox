@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import notion_client as nc
-from shared_state import COMMON_CSS, init_session_state, update_sensors
+from shared_state import COMMON_CSS, init_session_state, update_sensors, fusion_capteurs_partages
 import handoff_ui
 
 
@@ -35,6 +35,8 @@ st.markdown("""
 # ── INIT & CAPTEURS ───────────────────────────────────────────────────────────
 init_session_state()
 c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_pct = update_sensors()
+# État partagé : reflète la surchauffe déclenchée par Lionel (via Notion)
+c_temp, c_vib, c_pres, c_rul, r_status = fusion_capteurs_partages(c_temp, c_vib, c_pres, c_rul, r_status)
 
 # Initialisation session_state pour persister le PDF généré (S3)
 for _key in ["sophie_pdf_bytes", "sophie_pdf_ref"]:

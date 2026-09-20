@@ -152,3 +152,34 @@ def update_sensors():
     r_status = "Nominal" if c_rul > 45 else ("Alerte" if c_rul > 3 else "Critique")
     rul_pct  = float(max(0.0, min(1.0, c_rul / RUL_NOMINAL)))
     return c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_pct
+
+
+# ── ÉTAT PARTAGÉ ENTRE PERSONAS (via Notion) ─────────────────────────────────
+# Le simulateur capteurs vit dans st.session_state (propre à chaque session).
+# Pour qu'une surchauffe déclenchée par Lionel soit vue par Sophie, Antoine et
+# Leila (sessions différentes), on lit le statut PARTAGÉ de la machine dans
+# Notion et, s'il est plus sévère que l'état local, on adopte des valeurs
+# capteurs représentatives du scénario partagé.
+_SEV_PARTAGE = {"Nominal": 0, "Alerte": 1, "Hors service": 2, "Critique": 2}
+
+
+def fusion_capteurs_partages(c_temp, c_vib, c_pres, c_rul, r_status, machine_id="P-17"):
+    """Retourne (c_temp, c_vib, c_pres, c_rul, r_status) fusionnés avec le statut
+    partagé de la machine dans Notion. Si Notion est plus sévère que le local,
+    on adopte l'état partagé (surchauffe vue par tous). Sinon on garde le local."""
+    try:
+        import notion_client as _nc
+        m = _nc.get_machine(machine_id) or {}
+        notion_stat = m.get("statut")
+    except Exception:
+        return c_temp, c_vib, c_pres, c_rul, r_status
+    if not notion_stat:
+        return c_temp, c_vib, c_pres, c_rul, r_status
+    if _SEV_PARTAGE.get(notion_stat, 0) <= _SEV_PARTAGE.get(r_status, 0):
+        return c_temp, c_vib, c_pres, c_rul, r_status
+    # Notion plus sévère -> on adopte l'état partagé (valeurs du scénario)
+    if notion_stat in ("Critique", "Hors service"):
+        return 82.0, 3.5, c_pres, min(int(c_rul), 1), "Critique"
+    if notion_stat == "Alerte":
+        return 76.0, 2.6, c_pres, min(int(c_rul), 30), "Alerte"
+    return c_temp, c_vib, c_pres, c_rul, r_status
