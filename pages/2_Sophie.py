@@ -59,11 +59,12 @@ with st.sidebar:
     st.sidebar.caption(f"RUL estimé : {c_rul}j ({r_status})")
 
 # ── TABS ──────────────────────────────────────────────────────────────────────
-tab0, tab1, tab2, tab3 = st.tabs([
+tab0, tab1, tab2, tab3, tab4 = st.tabs([
     "📡 S0 — Alertes actives",
     "🔮 S1 — Simulateur d'impact",
     "👥 S2 — Affectation équipe",
     "📊 S3 — Rapport hebdo",
+    "🗳️ S4 — Historique décisions",
 ])
 
 STATUS_COLOR  = {"Nominal": "#166534", "Alerte": "#b45309", "Critique": "#b91c1c"}
@@ -753,6 +754,69 @@ with tab3:
             use_container_width=True,
             key="dl_sophie_pdf",
         )
+
+# ════════════════════════════════════════════════════════════════════════════════
+# TAB 4 — S4 HISTORIQUE DES DÉCISIONS
+# ════════════════════════════════════════════════════════════════════════════════
+with tab4:
+    st.markdown("## 🗳️ Historique des décisions")
+    st.caption("Toutes les décisions d'arbitrage enregistrées depuis le simulateur d'impact (S1), les plus récentes en premier.")
+
+    try:
+        _decs = nc.get_decisions(limit=100) or []
+    except Exception as _e:
+        _decs = []
+        st.error("Lecture Notion impossible : " + str(_e)[:120])
+
+    if not _decs:
+        st.info("Aucune décision enregistrée pour le moment. Utilise l'onglet 🔮 S1 pour simuler puis enregistrer une décision.")
+    else:
+        # ── Filtres ─────────────────────────────────────────────────────────────
+        _eqs = sorted({str(d.get("equipement")) for d in _decs if d.get("equipement")})
+        _cf1, _cf2 = st.columns([2, 2])
+        with _cf1:
+            _fmach = st.selectbox("🏭 Machine", ["Toutes"] + _eqs, index=0, key="dec_mach")
+        with _cf2:
+            _fdec = st.selectbox("🗳️ Décision", ["Toutes", "Intervention maintenue", "Reportée"],
+                                 index=0, key="dec_type")
+
+        def _keep(d):
+            if _fmach != "Toutes" and str(d.get("equipement")) != _fmach:
+                return False
+            if _fdec != "Toutes" and str(d.get("decision")) != _fdec:
+                return False
+            return True
+
+        _rows = [d for d in _decs if _keep(d)]
+
+        # ── KPIs ────────────────────────────────────────────────────────────────
+        _n = len(_rows)
+        _n_maint = sum(1 for d in _rows if str(d.get("decision")) == "Intervention maintenue")
+        _n_rep   = sum(1 for d in _rows if str(d.get("decision")) == "Reportée")
+        _n_evit  = sum(1 for d in _rows if str(d.get("resultat")) == "Panne évitée")
+        _k1, _k2, _k3, _k4 = st.columns(4)
+        _k1.metric("🗳️ Décisions", _n)
+        _k2.metric("🛠️ Interventions maintenues", _n_maint)
+        _k3.metric("⏳ Reportées", _n_rep)
+        _k4.metric("✅ Pannes évitées", _n_evit)
+
+        st.markdown(f"**{_n}** décision(s) sur {len(_decs)} au total.")
+        if not _rows:
+            st.caption("Aucune décision ne correspond aux filtres.")
+        else:
+            _tbl = [{
+                "Date": d.get("date") or "—",
+                "Machine": d.get("equipement") or "—",
+                "Scénario": d.get("scenario") or "—",
+                "RUL (j)": d.get("rul_jours"),
+                "Risque (%)": d.get("risque_pct"),
+                "Impact (€)": d.get("impact_eur"),
+                "Décision": d.get("decision") or "—",
+                "Résultat": d.get("resultat") or "—",
+                "Commentaire": d.get("commentaire") or "",
+            } for d in _rows]
+            st.dataframe(_tbl, use_container_width=True, hide_index=True)
+
 
 # ── AUTO-REFRESH ──────────────────────────────────────────────────────────────
 if st.session_state.running:

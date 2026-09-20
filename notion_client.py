@@ -539,6 +539,10 @@ def create_intervention(data: dict) -> dict:
 
     resp = requests.post(url, headers=_headers(), json=body, timeout=10)
     resp.raise_for_status()
+    try:
+        get_decisions.clear()
+    except Exception:
+        pass
     return resp.json()
 
 
@@ -588,6 +592,29 @@ def update_intervention(page_id: str, data: dict) -> dict:
 
 
 # ── CRÉER UNE DÉCISION SOPHIE (POST) ──────────────────────────────────────────
+
+@st.cache_data(ttl=30)
+def get_decisions(limit: int = 50) -> list[dict]:
+    """Historique des décisions de simulation d'impact prises par Sophie,
+    triées par date décroissante (base [SANDBOX] Historique Décisions Sophie)."""
+    pages = _query_db(DB_IDS["decisions_sophie"], None,
+                      sorts=[{"property": "Date / Heure", "direction": "descending"}])
+    return [{
+        "id":          p["id"],
+        "nom":         _prop(p, "Nom"),
+        "equipement":  _prop(p, "Équipement"),
+        "date":        _prop(p, "Date / Heure"),
+        "rul_jours":   _prop(p, "RUL (jours)"),
+        "temperature": _prop(p, "Température (°C)"),
+        "vibrations":  _prop(p, "Vibrations (mm/s)"),
+        "scenario":    _prop(p, "Scénario simulé"),
+        "risque_pct":  _prop(p, "Risque estimé (%)"),
+        "impact_eur":  _prop(p, "Impact estimé (€)"),
+        "decision":    _prop(p, "Décision prise"),
+        "resultat":    _prop(p, "Résultat réel"),
+        "commentaire": _prop(p, "Commentaire"),
+    } for p in pages[:limit]]
+
 
 def create_decision(data: dict) -> dict:
     """
