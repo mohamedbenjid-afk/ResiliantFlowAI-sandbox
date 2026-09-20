@@ -432,7 +432,7 @@ with tab2:
                 # temps réel (cf. BRIEFING), donc c_temp/c_vib/c_pres ne sont pas transmis
                 # à l'agent — ils restent affichés uniquement dans le simulateur capteurs.
                 result = run_agent_antoine(
-                    equipement="Pompe P-17", c_rul=int(c_rul),
+                    equipement="P-17", c_rul=int(c_rul),  # code machine reel (matche machines+historique)
                     taux_actualisation=taux_pct_input / 100,
                     duree_vie_remplacement_ans=int(duree_vie_input),
                     duree_installation_h=duree_install_input,
