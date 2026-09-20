@@ -59,6 +59,67 @@ def _risk_card(col, machine: str, rul: str, score, niveau: str, unite: str):
     )
 
 
+# ── STYLING COULEUR POUR TABLEAUX (nouveau) ───────────────────────────────────
+def _niveau_row_color(niveau: str) -> str:
+    """Couleur de fond CSS selon le niveau de risque (texte pouvant contenir
+    un emoji en tête, ex: '🔴 CRITIQUE') — même palette que _risk_card, pour
+    rester cohérent visuellement avec le reste de l'app."""
+    niveau = niveau or ""
+    if "CRITIQUE" in niveau:
+        return "background-color: #fee2e2"
+    if "ÉLEVÉ" in niveau:
+        return "background-color: #ffedd5"
+    if "MODÉRÉ" in niveau:
+        return "background-color: #fef9c3"
+    return "background-color: #dcfce7"
+
+
+def _style_niveau_df(df: pd.DataFrame, niveau_col: str = "Niveau de risque"):
+    """Applique une couleur de ligne selon la colonne de niveau de risque —
+    utilisé pour les tableaux d'arbitrage budgétaire (machines retenues /
+    non retenues), qui n'avaient jusqu'ici aucun code couleur."""
+    def _row_style(row):
+        color = _niveau_row_color(row.get(niveau_col, ""))
+        return [color] * len(row)
+    return df.style.apply(_row_style, axis=1)
+
+
+def _style_scenarios_df(df: pd.DataFrame, reco: str):
+    """Met en évidence en vert la ligne du scénario recommandé (au CAE le
+    plus bas) dans le tableau A/B/C — jusqu'ici le tableau était entièrement
+    neutre, sans indication visuelle du scénario à retenir."""
+    def _row_style(row):
+        label = str(row.get("Scénario", ""))
+        is_reco = bool(label) and bool(reco) and label[0] == reco[0]
+        color = "background-color: #dcfce7; font-weight: 600" if is_reco else ""
+        return [color] * len(row)
+    return df.style.apply(_row_style, axis=1)
+
+
+# ── ARCHIVAGE FICHES CODIR (nouveau) ──────────────────────────────────────────
+ARCHIVE_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "archives_codir")
+
+
+def _archiver_fiche_codir(pdf_bytes: bytes, ref: str) -> str:
+    """Copie la fiche CODIR générée dans le dossier d'archives local du repo
+    sandbox. Retourne le chemin du fichier archivé. Purement local au repo —
+    aucune base Notion créée, aucun service externe requis."""
+    os.makedirs(ARCHIVE_DIR, exist_ok=True)
+    path = os.path.join(ARCHIVE_DIR, f"{ref}.pdf")
+    with open(path, "wb") as f:
+        f.write(pdf_bytes)
+    return path
+
+
+def _lister_archives_codir() -> list:
+    """Liste les fiches CODIR archivées, les plus récentes en premier."""
+    if not os.path.isdir(ARCHIVE_DIR):
+        return []
+    fichiers = [f for f in os.listdir(ARCHIVE_DIR) if f.lower().endswith(".pdf")]
+    fichiers.sort(key=lambda f: os.path.getmtime(os.path.join(ARCHIVE_DIR, f)), reverse=True)
+    return fichiers
+
+
 # ── CONFIG PAGE ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Antoine — Indicateurs Stratégiques", page_icon="📊", layout="wide")
 st.markdown(COMMON_CSS, unsafe_allow_html=True)
@@ -442,7 +503,8 @@ with tab2:
             st.caption(
                 "⚠️ A/B et C portent sur des durées différentes : leurs NPV brutes ne sont "
                 "pas comparables directement. La colonne **CAE** (Coût Annuel Équivalent) "
-                "ramène les 3 scénarios à un coût par an — c'est elle qui doit guider l'arbitrage."
+                "ramène les 3 scénarios à un coût par an — c'est elle qui doit guider l'arbitrage. "
+                "Le scénario recommandé est surligné en vert ci-dessous."
             )
 
             sc_data = sc["scenarios"]
@@ -488,8 +550,9 @@ with tab2:
                 },
             ])
 
+            reco = sc.get("recommandation_financiere", "")
             st.dataframe(
-                df_scenarios.style.format({
+                _style_scenarios_df(df_scenarios, reco).format({
                     "Coût total (€)": lambda x: _fmt_fr(x),
                     "NPV (€)":        lambda x: _fmt_fr(x),
                     "CAE (€/an)":     lambda x: _fmt_fr(x),
@@ -498,8 +561,7 @@ with tab2:
                 hide_index=True,
             )
 
-            reco = sc.get("recommandation_financiere", "")
-            eco  = sc.get("economie_prescriptif_vs_correctif_eur", 0)
+            reco_eco  = eco  = sc.get("economie_prescriptif_vs_correctif_eur", 0)
             eco_cae = sc.get("economie_annuelle_cae_eur", 0)
             st.success(
                 f"✅ **Recommandation agent (au CAE le plus bas) :** {reco} — "
@@ -528,7 +590,10 @@ with tab2:
             non_retenues = arbitrage.get("machines_non_retenues", [])
 
             if retenues:
-                st.caption("✅ **Machines retenues** (par ordre de priorité — meilleur ratio gain/investissement d'abord) :")
+                st.caption(
+                    "✅ **Machines retenues** (par ordre de priorité — meilleur ratio gain/investissement "
+                    "d'abord), couleur = niveau de risque :"
+                )
                 df_retenues = pd.DataFrame([
                     {
                         "Machine":    f"{m['machine']} ({m['unite']})",
@@ -540,7 +605,7 @@ with tab2:
                     for m in retenues
                 ])
                 st.dataframe(
-                    df_retenues.style.format({
+                    _style_niveau_df(df_retenues).format({
                         "CAPEX (€)":            lambda x: _fmt_fr(x),
                         "Gain annuel (€/an)":   lambda x: _fmt_fr(x),
                         "Ratio (€ gagné / € investi)": lambda x: _fmt_fr(x, 3),
@@ -560,7 +625,7 @@ with tab2:
                     for m in non_retenues
                 ])
                 st.dataframe(
-                    df_non_retenues.style.format({"CAPEX (€)": lambda x: _fmt_fr(x)}),
+                    _style_niveau_df(df_non_retenues).format({"CAPEX (€)": lambda x: _fmt_fr(x)}),
                     use_container_width=True, hide_index=True,
                 )
 
@@ -609,6 +674,98 @@ with tab3:
             use_container_width=True,
             key="dl_codir_pdf",
         )
+
+        st.markdown("---")
+
+        # ── Envoi aux membres du CODIR (lien mailto) ──────────────────────────
+        st.markdown("##### 📧 Envoyer aux membres du CODIR")
+        st.caption(
+            "Ouvre votre client mail avec destinataires, objet et message pré-remplis. "
+            "⚠️ Le PDF doit être joint manuellement après téléchargement ci-dessus "
+            "(un navigateur ne peut pas joindre de fichier automatiquement à un email "
+            "pour des raisons de sécurité)."
+        )
+        destinataires_input = st.text_input(
+            "Destinataires (séparés par des virgules)",
+            value=st.session_state.get("antoine_codir_destinataires", ""),
+            placeholder="antoine@resilientflow.ai, pdg@resilientflow.ai",
+            key="antoine_codir_destinataires",
+        )
+
+        import urllib.parse as _urlparse
+
+        result = st.session_state.antoine_result
+        sc_mail = (result or {}).get("scenarios") or {}
+        reco_mail = sc_mail.get("recommandation_financiere", "—")
+        eco_mail  = sc_mail.get("economie_annuelle_cae_eur", 0)
+
+        mail_subject = f"Fiche CODIR — {st.session_state.antoine_pdf_ref}"
+        mail_body = (
+            f"Bonjour,\n\n"
+            f"Veuillez trouver ci-joint la fiche décisionnelle CODIR "
+            f"({st.session_state.antoine_pdf_ref}) générée par ResilientFlow AI.\n\n"
+            f"Recommandation de l'agent : {reco_mail}\n"
+            f"Économie annuelle estimée (CAE) : {_fmt_fr(eco_mail)} €/an\n\n"
+            f"⚠️ Pensez à joindre le PDF téléchargé avant l'envoi.\n\n"
+            f"Cordialement,\nAntoine — Directeur Technique"
+        )
+        mailto_url = (
+            f"mailto:{_urlparse.quote(destinataires_input)}"
+            f"?subject={_urlparse.quote(mail_subject)}"
+            f"&body={_urlparse.quote(mail_body)}"
+        )
+
+        try:
+            st.link_button(
+                "📧 Ouvrir un email pré-rempli pour le CODIR",
+                mailto_url,
+                use_container_width=True,
+                disabled=not destinataires_input.strip(),
+            )
+        except AttributeError:
+            # Fallback si st.link_button n'existe pas (Streamlit < 1.27)
+            if destinataires_input.strip():
+                st.markdown(f'<a href="{mailto_url}">📧 Ouvrir un email pré-rempli pour le CODIR</a>',
+                            unsafe_allow_html=True)
+            else:
+                st.caption("Saisissez au moins un destinataire pour activer le lien.")
+
+        st.markdown("---")
+
+        # ── Archivage local (historique des fiches CODIR) ─────────────────────
+        st.markdown("##### 🗄️ Archiver cette fiche")
+        st.caption(
+            "Enregistre une copie de cette fiche dans le dossier d'archives local "
+            "du repo sandbox (`data/archives_codir/`), pour retrouver l'historique "
+            "des décisions CODIR sans dépendre de Notion."
+        )
+        if st.button("🗄️ Archiver cette fiche CODIR", use_container_width=True, key="btn_archiver_codir"):
+            try:
+                chemin = _archiver_fiche_codir(
+                    st.session_state.antoine_pdf_bytes, st.session_state.antoine_pdf_ref
+                )
+                st.success(f"✅ Fiche archivée : `{os.path.basename(chemin)}`")
+            except Exception as e:
+                st.error(f"❌ Erreur d'archivage : {e}")
+
+    # ── Historique des fiches CODIR archivées ─────────────────────────────────
+    st.markdown("---")
+    st.markdown("##### 📚 Historique des fiches CODIR")
+    archives = _lister_archives_codir()
+    if not archives:
+        st.caption("Aucune fiche archivée pour l'instant.")
+    else:
+        with st.expander(f"📚 {len(archives)} fiche(s) archivée(s)", expanded=False):
+            for nom_fichier in archives:
+                chemin = os.path.join(ARCHIVE_DIR, nom_fichier)
+                horodatage = datetime.fromtimestamp(os.path.getmtime(chemin)).strftime("%d/%m/%Y à %H:%M")
+                col_nom, col_dl = st.columns([4, 1])
+                col_nom.markdown(f"**{nom_fichier[:-4]}**  \n*Archivée le {horodatage}*")
+                with open(chemin, "rb") as f:
+                    col_dl.download_button(
+                        "⬇️", data=f.read(), file_name=nom_fichier, mime="application/pdf",
+                        key=f"dl_archive_{nom_fichier}", use_container_width=True,
+                    )
 
     result = st.session_state.antoine_result
     analyse = result.get("analyse", "") if result else ""
