@@ -334,6 +334,37 @@ def get_historique(machine_id: str = None, statut: str = None, limit: int = 20) 
     } for p in pages[:limit]]
 
 
+def set_machine_statut(machine_id: str, statut: str) -> dict | None:
+    """Met a jour le Statut d'une machine (base Equipements) — etat PARTAGE entre
+    sessions (Lionel simule une surchauffe -> Sophie/Antoine voient l'alerte).
+    Ignore les lignes doublon. Statut in {Nominal, Alerte, Critique, Hors service}.
+    Invalide les caches get_machines / get_machine."""
+    pages = _query_db(DB_IDS["machines"],
+                      {"property": "Équipement", "title": {"contains": machine_id}})
+    cible = None
+    for p in pages:
+        nom = (_prop(p, "Équipement") or "")
+        low = nom.lower()
+        if "doublon" in low or "supprimer" in low or "🗑" in nom:
+            continue
+        if _extract_code(nom) == machine_id:
+            cible = p
+            break
+    if cible is None:
+        return None
+    resp = requests.patch(f"{NOTION_BASE_URL}/pages/{cible['id']}",
+                          headers=_headers(),
+                          json={"properties": {"Statut": {"select": {"name": statut}}}},
+                          timeout=10)
+    resp.raise_for_status()
+    for _fn in (get_machines, get_machine):
+        try:
+            _fn.clear()
+        except Exception:
+            pass
+    return resp.json()
+
+
 # ── 6. DOCUMENTATION & HSE ────────────────────────────────────────────────────
 # Base ESCP : titre = "Titre document"
 # Champs : Type, Statut, Machine concernée, EPI obligatoires, Niveau risque,

@@ -86,11 +86,15 @@ with tab0:
             {"id": "M-08",  "nom": "Moteur M-08",       "statut": "Nominal",  "rul_jours": 90,    "unite": "Ligne 2",  "responsable": "Sophie"},
         ]
 
-    # Aligner P-17 avec le simulateur temps réel
+    # P-17 : le statut vient de Notion (état PARTAGÉ — propage la surchauffe
+    # déclenchée par Lionel dans une autre session). On n'écrase avec le
+    # simulateur local QUE s'il est plus critique (démo menée depuis Sophie).
+    _SEV = {"Nominal": 0, "Alerte": 1, "Hors service": 1, "Critique": 2}
     for m in machines:
         if "P-17" in (m.get("id") or "") or "P-17" in (m.get("nom") or ""):
-            m["rul_jours"] = c_rul
-            m["statut"]    = r_status
+            if _SEV.get(r_status, 0) > _SEV.get(m.get("statut"), 0):
+                m["rul_jours"] = c_rul
+                m["statut"]    = r_status
 
     # Tri par urgence décroissante
     def _urgency_key(m):

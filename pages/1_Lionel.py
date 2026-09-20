@@ -93,6 +93,10 @@ with st.sidebar:
             st.session_state.base_temp = 82.0
             st.session_state.base_vib  = 3.5
             st.session_state.running = True   # relance le live pour jouer le scénario
+            try:
+                nc.set_machine_statut("P-17", "Critique")  # etat partage -> Sophie/Antoine
+            except Exception:
+                pass
             st.rerun()
     with col_s2:
         if st.button("✅ Normal", use_container_width=True):
@@ -100,6 +104,10 @@ with st.sidebar:
             st.session_state.base_vib  = 0.8
             st.session_state.base_pres = 4.4
             st.session_state.running = True
+            try:
+                nc.set_machine_statut("P-17", "Nominal")  # etat partage -> Sophie/Antoine
+            except Exception:
+                pass
             st.rerun()
 
     st.markdown("---")
