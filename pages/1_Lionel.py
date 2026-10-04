@@ -428,7 +428,7 @@ with tab_jour:
                 st.warning("Alerte non envoyée : " + str(_e)[:120])
 
         # Compte-rendu (traçabilité) → Notion + notif Sophie
-        st.markdown("**✅ Compte-rendu d'intervention** (tout est tracé)")
+        st.markdown("**✅ Compte-rendu d'intervention**")
         _iid = str(_act.get("id", "x"))
         _pieces_opts = _pieces_options_pour(_act)
         _def_pieces = [p for p in _split_composants(_act.get("composants", "")) if p in _pieces_opts]
@@ -477,7 +477,7 @@ with tab_jour:
                 else:
                     nc.create_intervention(_data)
                 st.session_state.pop("mes_interventions", None)
-                st.success("Compte-rendu enregistré dans Notion ✅ (traçabilité).")
+                st.success("Compte-rendu enregistré dans Notion ✅")
                 try:
                     from notify import envoyer_bon_de_travail
                     envoyer_bon_de_travail(_act.get("machine", "P-17"), _act.get("titre", ""),
